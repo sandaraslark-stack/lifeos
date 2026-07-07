@@ -1,10 +1,12 @@
 "use client";
 
-import type { CSSProperties, FormEvent } from "react";
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   Activity,
   Banknote,
+  Bot,
   CalendarDays,
+  ChefHat,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -18,12 +20,15 @@ import {
   PiggyBank,
   Plane,
   Plus,
+  Send,
   ShieldCheck,
   Sparkles,
   Target,
   TrendingUp,
   Trash2,
+  Utensils,
   WalletCards,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
@@ -72,6 +77,14 @@ type PurchaseGoal = {
   monthlyContribution: number;
 };
 
+type MealPlan = {
+  id: string;
+  date: string;
+  meal: "brunch" | "dinner";
+  food: string;
+  notes: string;
+};
+
 type LifeOSState = {
   stash: number;
   buyingPowerPercent: number;
@@ -79,10 +92,16 @@ type LifeOSState = {
   obligations: Obligation[];
   trips: Trip[];
   purchaseGoals: PurchaseGoal[];
+  meals: MealPlan[];
 };
 
-type ActiveTab = "overview" | "budget" | "travel";
+type ActiveTab = "overview" | "budget" | "travel" | "food";
 type BudgetTab = "allocations" | "obligations" | "buy-list";
+type PhilMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
 type SyncState = {
   status: "Local only" | "Sign in" | "Connecting" | "Synced" | "Saving" | "Check email" | "Setup needed" | "Error";
   detail: string;
@@ -149,6 +168,22 @@ const defaultState: LifeOSState = {
       price: 35000,
       availableFund: 8000,
       monthlyContribution: 1200,
+    },
+  ],
+  meals: [
+    {
+      id: "meal-demo-brunch",
+      date: dateInputValue(new Date()),
+      meal: "brunch",
+      food: "Eggs, rice, and coffee",
+      notes: "Simple trading-day brunch.",
+    },
+    {
+      id: "meal-demo-dinner",
+      date: dateInputValue(new Date()),
+      meal: "dinner",
+      food: "Chicken adobo",
+      notes: "Cook extra for leftovers.",
     },
   ],
 };
@@ -229,6 +264,7 @@ function normalizeLifeOSState(state: Partial<LifeOSState>): LifeOSState {
     obligations: state.obligations ?? defaultState.obligations,
     trips: state.trips ?? defaultState.trips,
     purchaseGoals: state.purchaseGoals ?? defaultState.purchaseGoals,
+    meals: state.meals ?? defaultState.meals,
   };
 }
 
@@ -313,6 +349,27 @@ export default function Home() {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
+  const [foodMonth, setFoodMonth] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [selectedMealSlot, setSelectedMealSlot] = useState<{
+    date: string;
+    meal: MealPlan["meal"];
+  } | null>(null);
+  const [mealDraft, setMealDraft] = useState({ food: "", notes: "" });
+  const [philOpen, setPhilOpen] = useState(false);
+  const [philPosition, setPhilPosition] = useState({ x: 0, y: 0 });
+  const [philInput, setPhilInput] = useState("");
+  const [philLoading, setPhilLoading] = useState(false);
+  const philDraggedRef = useRef(false);
+  const [philMessages, setPhilMessages] = useState<PhilMessage[]>([
+    {
+      id: "phil-welcome",
+      role: "assistant",
+      content: "I am Phil, your LifeOS advisor. Ask me anything about your stash, bills, trips, food, or buy list.",
+    },
+  ]);
   const [draftTrip, setDraftTrip] = useState({
     whereTo: "Manila",
     purpose: "Focused getaway",
@@ -430,6 +487,17 @@ export default function Home() {
     const timer = window.setInterval(() => setNow(new Date()), 60000);
 
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setPhilPosition({
+        x: Math.max(window.innerWidth - 118, 18),
+        y: Math.max(window.innerHeight - 118, 18),
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -606,6 +674,15 @@ export default function Home() {
     .toSorted((a, b) => compareDateStrings(a.startDate, b.startDate))
     .find((trip) => compareDateStrings(trip.endDate, dateInputValue(new Date())) >= 0);
 
+  const foodSuggestions = Array.from(
+    new Set(
+      state.meals
+        .map((meal) => meal.food.trim())
+        .filter(Boolean)
+        .toSorted((a, b) => a.localeCompare(b)),
+    ),
+  ).slice(0, 10);
+
   const calendarDays = useMemo(() => {
     const year = activeMonth.getFullYear();
     const month = activeMonth.getMonth();
@@ -619,6 +696,20 @@ export default function Home() {
 
     return cells;
   }, [activeMonth]);
+
+  const foodCalendarDays = useMemo(() => {
+    const year = foodMonth.getFullYear();
+    const month = foodMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const totalDays = daysInMonth(year, month);
+    const cells: Array<string | null> = Array.from({ length: firstDay }, () => null);
+
+    for (let day = 1; day <= totalDays; day += 1) {
+      cells.push(dateInputValue(new Date(year, month, day)));
+    }
+
+    return cells;
+  }, [foodMonth]);
 
   function updateCategory(id: string, patch: Partial<Category>) {
     setState((current) => ({
@@ -678,6 +769,146 @@ export default function Home() {
           : category,
       ),
     }));
+  }
+
+  function getMeal(date: string, meal: MealPlan["meal"]) {
+    return state.meals.find((item) => item.date === date && item.meal === meal);
+  }
+
+  function openMealSlot(date: string, meal: MealPlan["meal"]) {
+    const currentMeal = getMeal(date, meal);
+    setSelectedMealSlot({ date, meal });
+    setMealDraft({
+      food: currentMeal?.food ?? "",
+      notes: currentMeal?.notes ?? "",
+    });
+  }
+
+  function saveMealSlot() {
+    if (!selectedMealSlot) {
+      return;
+    }
+
+    const existing = getMeal(selectedMealSlot.date, selectedMealSlot.meal);
+
+    setState((current) => ({
+      ...current,
+      meals: existing
+        ? current.meals.map((meal) =>
+            meal.id === existing.id
+              ? {
+                  ...meal,
+                  food: mealDraft.food,
+                  notes: mealDraft.notes,
+                }
+              : meal,
+          )
+        : [
+            ...current.meals,
+            {
+              id: createId("meal"),
+              date: selectedMealSlot.date,
+              meal: selectedMealSlot.meal,
+              food: mealDraft.food,
+              notes: mealDraft.notes,
+            },
+          ],
+    }));
+  }
+
+  function deleteMealSlot() {
+    if (!selectedMealSlot) {
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      meals: current.meals.filter(
+        (meal) => !(meal.date === selectedMealSlot.date && meal.meal === selectedMealSlot.meal),
+      ),
+    }));
+    setMealDraft({ food: "", notes: "" });
+  }
+
+  function startPhilDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const originX = event.clientX - philPosition.x;
+    const originY = event.clientY - philPosition.y;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    philDraggedRef.current = false;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    function movePhil(moveEvent: PointerEvent) {
+      if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) > 6) {
+        philDraggedRef.current = true;
+      }
+
+      setPhilPosition({
+        x: Math.max(12, Math.min(window.innerWidth - 82, moveEvent.clientX - originX)),
+        y: Math.max(12, Math.min(window.innerHeight - 82, moveEvent.clientY - originY)),
+      });
+    }
+
+    function stopPhil() {
+      window.removeEventListener("pointermove", movePhil);
+      window.removeEventListener("pointerup", stopPhil);
+    }
+
+    window.addEventListener("pointermove", movePhil);
+    window.addEventListener("pointerup", stopPhil);
+  }
+
+  async function askPhil(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!philInput.trim() || philLoading) {
+      return;
+    }
+
+    const userMessage: PhilMessage = {
+      id: createId("phil-user"),
+      role: "user",
+      content: philInput.trim(),
+    };
+
+    setPhilMessages((current) => [...current, userMessage]);
+    setPhilInput("");
+    setPhilLoading(true);
+
+    try {
+      const response = await fetch("/api/phil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: userMessage.content,
+          state,
+          messages: philMessages.slice(-8),
+        }),
+      });
+      const result = (await response.json()) as { answer?: string; error?: string };
+
+      setPhilMessages((current) => [
+        ...current,
+        {
+          id: createId("phil-assistant"),
+          role: "assistant",
+          content: result.answer ?? result.error ?? "Phil could not answer yet.",
+        },
+      ]);
+    } catch {
+      setPhilMessages((current) => [
+        ...current,
+        {
+          id: createId("phil-error"),
+          role: "assistant",
+          content: "Phil could not reach the advisor API. Check your OpenAI API key setup.",
+        },
+      ]);
+    } finally {
+      setPhilLoading(false);
+    }
   }
 
   function readImageFile(file: File, onReady: (imageUrl: string) => void) {
@@ -903,6 +1134,14 @@ export default function Home() {
               <Compass size={17} aria-hidden="true" />
               Travel
             </button>
+            <button
+              className={activeTab === "food" ? styles.activeTab : ""}
+              type="button"
+              onClick={() => setActiveTab("food")}
+            >
+              <ChefHat size={17} aria-hidden="true" />
+              Food
+            </button>
           </nav>
         </header>
 
@@ -933,6 +1172,14 @@ export default function Home() {
           >
             <Compass size={17} aria-hidden="true" />
             Travel
+          </button>
+          <button
+            className={activeTab === "food" ? styles.activeTab : ""}
+            type="button"
+            onClick={() => setActiveTab("food")}
+          >
+            <ChefHat size={17} aria-hidden="true" />
+            Food
           </button>
         </nav>
 
@@ -1923,6 +2170,210 @@ export default function Home() {
             </section>
           </section>
         )}
+
+        {activeTab === "food" && (
+          <section className={styles.workspace}>
+            <section className={styles.foodSection}>
+              <article className={styles.foodCalendarPanel}>
+                <div className={styles.calendarHead}>
+                  <button
+                    className={styles.iconButton}
+                    type="button"
+                    title="Previous month"
+                    onClick={() => setFoodMonth((current) => addMonths(current, -1))}
+                  >
+                    <ChevronLeft size={18} aria-hidden="true" />
+                  </button>
+                  <div>
+                    <Utensils size={18} aria-hidden="true" />
+                    <strong>
+                      {monthNames[foodMonth.getMonth()]} {foodMonth.getFullYear()}
+                    </strong>
+                  </div>
+                  <button
+                    className={styles.iconButton}
+                    type="button"
+                    title="Next month"
+                    onClick={() => setFoodMonth((current) => addMonths(current, 1))}
+                  >
+                    <ChevronRight size={18} aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className={styles.foodCalendarGrid}>
+                  {dayLabels.map((label) => (
+                    <span className={styles.dayLabel} key={label}>
+                      {label}
+                    </span>
+                  ))}
+                  {foodCalendarDays.map((date, index) => {
+                    if (!date) {
+                      return <span className={styles.emptyFoodDay} key={`food-empty-${index}`} />;
+                    }
+
+                    const brunch = getMeal(date, "brunch");
+                    const dinner = getMeal(date, "dinner");
+
+                    return (
+                      <div className={styles.foodDay} key={date}>
+                        <strong>{parseLocalDate(date).getDate()}</strong>
+                        <button
+                          className={brunch ? styles.mealFilled : ""}
+                          type="button"
+                          onClick={() => openMealSlot(date, "brunch")}
+                        >
+                          <span>Brunch</span>
+                          <small>{brunch?.food || "Plan"}</small>
+                        </button>
+                        <button
+                          className={dinner ? styles.mealFilled : ""}
+                          type="button"
+                          onClick={() => openMealSlot(date, "dinner")}
+                        >
+                          <span>Dinner</span>
+                          <small>{dinner?.food || "Plan"}</small>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+
+              <aside className={styles.foodEditor}>
+                <div className={styles.panelTitle}>
+                  <ChefHat size={20} aria-hidden="true" />
+                  <div>
+                    <h2>Food Planner</h2>
+                    <p>Plan brunch and dinner, then reuse past meals when you need ideas.</p>
+                  </div>
+                </div>
+
+                {selectedMealSlot ? (
+                  <div className={styles.mealEditorForm}>
+                    <div className={styles.selectedMealHeader}>
+                      <span>
+                        {selectedMealSlot.meal} - {selectedMealSlot.date}
+                      </span>
+                      <button type="button" onClick={() => setSelectedMealSlot(null)} title="Close editor">
+                        <X size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <label>
+                      <span>Food</span>
+                      <input
+                        value={mealDraft.food}
+                        onChange={(event) => setMealDraft((current) => ({ ...current, food: event.target.value }))}
+                        placeholder="What are we eating?"
+                        list="food-suggestions"
+                      />
+                    </label>
+                    <label>
+                      <span>Notes</span>
+                      <textarea
+                        value={mealDraft.notes}
+                        onChange={(event) => setMealDraft((current) => ({ ...current, notes: event.target.value }))}
+                        placeholder="Prep notes, groceries, calories, anything useful."
+                      />
+                    </label>
+                    <datalist id="food-suggestions">
+                      {foodSuggestions.map((food) => (
+                        <option value={food} key={food} />
+                      ))}
+                    </datalist>
+                    <div className={styles.mealEditorActions}>
+                      <button className={styles.primaryButton} type="button" onClick={saveMealSlot}>
+                        Save meal
+                      </button>
+                      <button className={styles.deleteMealButton} type="button" onClick={deleteMealSlot}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={styles.foodEmptyState}>
+                    <Utensils size={28} aria-hidden="true" />
+                    <strong>Pick brunch or dinner</strong>
+                    <span>Click any meal slot in the calendar to add, edit, or delete food.</span>
+                  </div>
+                )}
+
+                <div className={styles.foodSuggestions}>
+                  <h3>Past food ideas</h3>
+                  {foodSuggestions.length ? (
+                    <div>
+                      {foodSuggestions.map((food) => (
+                        <button
+                          type="button"
+                          key={food}
+                          onClick={() => setMealDraft((current) => ({ ...current, food }))}
+                        >
+                          {food}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>Add a few meals and Phil will have more context too.</p>
+                  )}
+                </div>
+              </aside>
+            </section>
+          </section>
+        )}
+
+        <div
+          className={styles.philWidget}
+          style={{ transform: `translate3d(${philPosition.x}px, ${philPosition.y}px, 0)` }}
+        >
+          {philOpen ? (
+            <section className={styles.philPanel}>
+              <div className={styles.philHeader}>
+                <div>
+                  <Bot size={19} aria-hidden="true" />
+                  <strong>Phil</strong>
+                  <span>Life advisor</span>
+                </div>
+                <button type="button" onClick={() => setPhilOpen(false)} title="Close Phil">
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+              <div className={styles.philMessages}>
+                {philMessages.map((message) => (
+                  <p className={message.role === "user" ? styles.philUserMessage : ""} key={message.id}>
+                    {message.content}
+                  </p>
+                ))}
+                {philLoading ? <p>Phil is thinking...</p> : null}
+              </div>
+              <form className={styles.philForm} onSubmit={askPhil}>
+                <input
+                  value={philInput}
+                  onChange={(event) => setPhilInput(event.target.value)}
+                  placeholder="Ask about anything in LifeOS..."
+                />
+                <button type="submit" disabled={philLoading || !philInput.trim()}>
+                  <Send size={16} aria-hidden="true" />
+                </button>
+              </form>
+            </section>
+          ) : null}
+          <button
+            className={styles.philButton}
+            type="button"
+            onPointerDown={startPhilDrag}
+            onClick={() => {
+              if (philDraggedRef.current) {
+                philDraggedRef.current = false;
+                return;
+              }
+
+              setPhilOpen((current) => !current);
+            }}
+            title="Ask Phil"
+          >
+            <Bot size={24} aria-hidden="true" />
+            <span>Phil</span>
+          </button>
+        </div>
       </section>
     </main>
   );

@@ -673,7 +673,8 @@
 .analyticsCanvas,
 .flow,
 .grid,
-.travelSection {
+.travelSection,
+.foodSection {
   display: grid;
   gap: 16px;
 }
@@ -1044,6 +1045,11 @@
 
 .travelSection {
   grid-template-columns: 430px minmax(0, 1fr);
+  align-items: start;
+}
+
+.foodSection {
+  grid-template-columns: minmax(0, 1.35fr) 380px;
   align-items: start;
 }
 
@@ -1709,6 +1715,377 @@
   font-size: 13px;
 }
 
+.foodCalendarPanel,
+.foodEditor,
+.philPanel {
+  border: 1px solid rgba(186, 230, 253, 0.72);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 22px 50px rgba(14, 116, 144, 0.12);
+  backdrop-filter: blur(20px);
+}
+
+.foodCalendarPanel {
+  overflow: hidden;
+}
+
+.foodCalendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  padding: 14px 18px 20px;
+}
+
+.emptyFoodDay,
+.foodDay {
+  min-height: 150px;
+}
+
+.foodDay {
+  display: grid;
+  grid-template-rows: 28px 1fr 1fr;
+  gap: 7px;
+  border: 1px solid rgba(219, 234, 254, 0.9);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 9px;
+}
+
+.foodDay > strong {
+  color: #244761;
+  font-size: 14px;
+}
+
+.foodDay button {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 13px;
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(255, 255, 255, 0.88));
+  color: #244761;
+  padding: 8px;
+  text-align: left;
+}
+
+.foodDay button:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 10px 20px rgba(56, 189, 248, 0.14);
+}
+
+.foodDay .mealFilled {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: linear-gradient(135deg, rgba(220, 252, 231, 0.9), rgba(224, 242, 254, 0.76));
+}
+
+.foodDay span {
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.foodDay small {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foodEditor {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.mealEditorForm {
+  display: grid;
+  gap: 11px;
+}
+
+.selectedMealHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.selectedMealHeader span,
+.mealEditorForm label span,
+.foodSuggestions h3 {
+  color: #557086;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.selectedMealHeader button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0284c7;
+}
+
+.mealEditorForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.mealEditorForm input,
+.mealEditorForm textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bfdbfe;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #102033;
+  font: inherit;
+  padding: 11px;
+}
+
+.mealEditorForm textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.mealEditorActions {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 8px;
+}
+
+.deleteMealButton {
+  border: 1px solid rgba(251, 113, 133, 0.42);
+  border-radius: 14px;
+  background: rgba(255, 241, 242, 0.92);
+  color: #e11d48;
+  font: inherit;
+  font-weight: 950;
+}
+
+.foodEmptyState {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 190px;
+  border: 1px dashed #bae6fd;
+  border-radius: 16px;
+  background: rgba(240, 249, 255, 0.7);
+  color: #557086;
+  padding: 18px;
+  text-align: center;
+}
+
+.foodEmptyState strong {
+  color: #102033;
+}
+
+.foodSuggestions {
+  display: grid;
+  gap: 10px;
+}
+
+.foodSuggestions div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.foodSuggestions button {
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0284c7;
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.foodSuggestions p {
+  margin: 0;
+  color: #557086;
+  font-size: 13px;
+}
+
+.philWidget {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  will-change: transform;
+}
+
+.philPanel {
+  width: min(360px, calc(100vw - 24px));
+  overflow: hidden;
+  box-shadow: 0 28px 70px rgba(2, 132, 199, 0.2), 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.philHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px;
+  border-bottom: 1px solid rgba(186, 230, 253, 0.72);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(34, 211, 238, 0.22), transparent 34%),
+    linear-gradient(135deg, rgba(240, 249, 255, 0.96), rgba(255, 255, 255, 0.88));
+}
+
+.philHeader div {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  column-gap: 10px;
+  align-items: center;
+}
+
+.philHeader svg {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 7px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.22);
+}
+
+.philHeader strong {
+  color: #102033;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.philHeader span {
+  color: #557086;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.philHeader button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #0284c7;
+  cursor: pointer;
+}
+
+.philMessages {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 13px;
+  background: rgba(248, 251, 255, 0.72);
+}
+
+.philMessages p {
+  width: fit-content;
+  max-width: 92%;
+  margin: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 15px 15px 15px 5px;
+  background: #ffffff;
+  color: #244761;
+  padding: 10px 11px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.philMessages .philUserMessage {
+  justify-self: end;
+  border-color: rgba(14, 165, 233, 0.3);
+  border-radius: 15px 15px 5px 15px;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  color: #ffffff;
+}
+
+.philForm {
+  display: grid;
+  grid-template-columns: 1fr 42px;
+  gap: 8px;
+  padding: 11px;
+  border-top: 1px solid rgba(186, 230, 253, 0.72);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.philForm input {
+  min-width: 0;
+  height: 42px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #102033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.philForm input:focus {
+  border-color: #38bdf8;
+  outline: 3px solid rgba(56, 189, 248, 0.18);
+}
+
+.philForm button,
+.philButton {
+  border: 0;
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.26);
+}
+
+.philForm button {
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+}
+
+.philForm button:disabled {
+  cursor: wait;
+  opacity: 0.56;
+}
+
+.philButton {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  width: 70px;
+  height: 70px;
+  border-radius: 22px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 950;
+  touch-action: none;
+  user-select: none;
+  animation: philFloat 4.8s ease-in-out infinite;
+}
+
+.philButton svg {
+  filter: drop-shadow(0 6px 12px rgba(15, 23, 42, 0.16));
+}
+
 .tripColorDot {
   flex: 0 0 auto;
   width: 12px;
@@ -1953,7 +2330,8 @@
   .analyticsCanvas,
   .flow,
   .grid,
-  .travelSection {
+  .travelSection,
+  .foodSection {
     grid-template-columns: 1fr;
   }
 
@@ -2086,6 +2464,27 @@
   .tripPreview {
     width: 160px;
   }
+
+  .foodCalendarGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .foodCalendarGrid .dayLabel,
+  .emptyFoodDay {
+    display: none;
+  }
+
+  .foodDay {
+    min-height: 138px;
+  }
+
+  .philPanel {
+    width: min(330px, calc(100vw - 24px));
+  }
+
+  .philMessages {
+    max-height: 260px;
+  }
 }
 
 @keyframes skyDrift {
@@ -2106,6 +2505,17 @@
 
   50% {
     transform: translateY(-2px);
+  }
+}
+
+@keyframes philFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-5px);
   }
 }
 
