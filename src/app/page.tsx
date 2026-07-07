@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import {
   Activity,
   Banknote,
@@ -84,9 +84,10 @@ type LifeOSState = {
 type ActiveTab = "overview" | "budget" | "travel";
 type BudgetTab = "allocations" | "obligations" | "buy-list";
 type SyncState = {
-  status: "Local only" | "Connecting" | "Synced" | "Saving" | "Setup needed" | "Error";
+  status: "Local only" | "Sign in" | "Connecting" | "Synced" | "Saving" | "Check email" | "Setup needed" | "Error";
   detail: string;
 };
+type AuthMode = "sign-in" | "sign-up";
 
 const defaultState: LifeOSState = {
   stash: 250000,
@@ -284,13 +285,6 @@ function syncStateFromDetail(status: SyncState["status"], detail: string): SyncS
 function getSupabaseSyncError(error: unknown): SyncState {
   const message = error instanceof Error ? error.message : "Supabase sync failed";
 
-  if (message.toLowerCase().includes("anonymous sign-ins are disabled")) {
-    return syncStateFromDetail(
-      "Setup needed",
-      "Enable Anonymous sign-ins in Supabase Authentication providers.",
-    );
-  }
-
   if (message.toLowerCase().includes("lifeos_states")) {
     return syncStateFromDetail("Setup needed", "Run supabase/schema.sql in the Supabase SQL editor.");
   }
@@ -306,6 +300,11 @@ export default function Home() {
   const [syncState, setSyncState] = useState<SyncState>(() =>
     syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"),
   );
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isScrolled, setIsScrolled] = useState(false);
   const cloudUserIdRef = useRef<string | null>(null);
   const cloudReadyRef = useRef(false);
@@ -328,6 +327,103 @@ export default function Home() {
   function setState(updater: LifeOSState | ((current: LifeOSState) => LifeOSState)) {
     const current = readLifeOSState();
     writeLifeOSState(typeof updater === "function" ? updater(current) : updater);
+  }
+
+  async function loadCloudState(userId: string) {
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const { data: remoteState, error: readError } = await supabase
+      .from("lifeos_states")
+      .select("data")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (readError) {
+      throw readError;
+    }
+
+    if (remoteState?.data) {
+      writeLifeOSState(normalizeLifeOSState(remoteState.data as Partial<LifeOSState>));
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("lifeos_states").upsert(
+      {
+        user_id: userId,
+        data: readLifeOSState(),
+      },
+      { onConflict: "user_id" },
+    );
+
+    if (insertError) {
+      throw insertError;
+    }
+  }
+
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase) {
+      setSyncState(syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"));
+      return;
+    }
+
+    try {
+      setAuthLoading(true);
+      setSyncState(syncStateFromDetail("Connecting", "Signing in to Supabase"));
+
+      const response =
+        authMode === "sign-in"
+          ? await supabase.auth.signInWithPassword({
+              email: authEmail,
+              password: authPassword,
+            })
+          : await supabase.auth.signUp({
+              email: authEmail,
+              password: authPassword,
+            });
+
+      if (response.error) {
+        throw response.error;
+      }
+
+      if (!response.data.user || !response.data.session) {
+        setSyncState(syncStateFromDetail("Check email", "Confirm your email, then sign in."));
+        return;
+      }
+
+      cloudUserIdRef.current = response.data.user.id;
+      setUserEmail(response.data.user.email ?? authEmail);
+      await loadCloudState(response.data.user.id);
+      cloudReadyRef.current = true;
+      setAuthPassword("");
+      setSyncState(syncStateFromDetail("Synced", "Supabase cloud sync is active"));
+    } catch (error) {
+      cloudReadyRef.current = false;
+      setSyncState(getSupabaseSyncError(error));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function signOut() {
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    await supabase.auth.signOut();
+    cloudReadyRef.current = false;
+    cloudUserIdRef.current = null;
+    setUserEmail(null);
+    setSyncState(syncStateFromDetail("Sign in", "Sign in to sync LifeOS with Supabase"));
   }
 
   useEffect(() => {
@@ -373,49 +469,19 @@ export default function Home() {
           throw sessionError;
         }
 
-        let user = sessionData.session?.user ?? null;
+        const user = sessionData.session?.user ?? null;
 
         if (!user) {
-          const { data, error } = await supabaseClient.auth.signInAnonymously();
-
-          if (error) {
-            throw error;
-          }
-
-          user = data.user;
-        }
-
-        if (!user) {
-          throw new Error("Supabase did not return a user session.");
+          cloudReadyRef.current = false;
+          cloudUserIdRef.current = null;
+          setUserEmail(null);
+          setSyncState(syncStateFromDetail("Sign in", "Sign in to sync LifeOS with Supabase"));
+          return;
         }
 
         cloudUserIdRef.current = user.id;
-
-        const { data: remoteState, error: readError } = await supabaseClient
-          .from("lifeos_states")
-          .select("data")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (readError) {
-          throw readError;
-        }
-
-        if (remoteState?.data) {
-          writeLifeOSState(normalizeLifeOSState(remoteState.data as Partial<LifeOSState>));
-        } else {
-          const { error: insertError } = await supabaseClient.from("lifeos_states").upsert(
-            {
-              user_id: user.id,
-              data: readLifeOSState(),
-            },
-            { onConflict: "user_id" },
-          );
-
-          if (insertError) {
-            throw insertError;
-          }
-        }
+        setUserEmail(user.email ?? "Signed in");
+        await loadCloudState(user.id);
 
         cloudReadyRef.current = true;
 
@@ -772,6 +838,45 @@ export default function Home() {
               </small>
             </div>
           </div>
+
+          {syncState.status !== "Local only" ? (
+            userEmail ? (
+              <div className={styles.accountPanel}>
+                <span>{userEmail}</span>
+                <button type="button" onClick={signOut}>
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <form className={styles.authPanel} onSubmit={handleAuthSubmit}>
+                <input
+                  type="email"
+                  value={authEmail}
+                  onChange={(event) => setAuthEmail(event.target.value)}
+                  placeholder="Email"
+                  required
+                />
+                <input
+                  type="password"
+                  value={authPassword}
+                  onChange={(event) => setAuthPassword(event.target.value)}
+                  placeholder="Password"
+                  minLength={6}
+                  required
+                />
+                <button type="submit" disabled={authLoading}>
+                  {authLoading ? "..." : authMode === "sign-in" ? "Sign in" : "Sign up"}
+                </button>
+                <button
+                  className={styles.authModeButton}
+                  type="button"
+                  onClick={() => setAuthMode((current) => (current === "sign-in" ? "sign-up" : "sign-in"))}
+                >
+                  {authMode === "sign-in" ? "New?" : "Have account?"}
+                </button>
+              </form>
+            )
+          ) : null}
 
           <nav className={styles.tabs} aria-label="LifeOS sections">
             <button
