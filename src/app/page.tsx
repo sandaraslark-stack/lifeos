@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Coins,
   Compass,
   Crown,
@@ -70,12 +71,10 @@ type Trip = {
   color?: string;
 };
 
-type PurchaseGoal = {
+type Want = {
   id: string;
   item: string;
   price: number;
-  availableFund: number;
-  monthlyContribution: number;
 };
 
 type MealPlan = {
@@ -98,13 +97,13 @@ type LifeOSState = {
   categories: Category[];
   obligations: Obligation[];
   trips: Trip[];
-  purchaseGoals: PurchaseGoal[];
+  wants: Want[];
   meals: MealPlan[];
   mealCatalog: MealCatalogItem[];
 };
 
 type ActiveTab = "overview" | "budget" | "travel" | "food";
-type BudgetTab = "allocations" | "obligations" | "buy-list";
+type BudgetTab = "allocations" | "obligations" | "wants";
 type PhilMessage = {
   id: string;
   role: "user" | "assistant";
@@ -169,13 +168,11 @@ const defaultState: LifeOSState = {
       color: "#0ea5e9",
     },
   ],
-  purchaseGoals: [
+  wants: [
     {
       id: "steam-deck",
       item: "Steam Deck",
       price: 35000,
-      availableFund: 8000,
-      monthlyContribution: 1200,
     },
   ],
   meals: [
@@ -269,14 +266,18 @@ function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.round(Math.random() * 1000)}`;
 }
 
-function normalizeLifeOSState(state: Partial<LifeOSState>): LifeOSState {
+function normalizeLifeOSState(state: Partial<LifeOSState> & { purchaseGoals?: Want[] }): LifeOSState {
   return {
     ...defaultState,
     ...state,
     categories: state.categories ?? defaultState.categories,
     obligations: state.obligations ?? defaultState.obligations,
     trips: state.trips ?? defaultState.trips,
-    purchaseGoals: state.purchaseGoals ?? defaultState.purchaseGoals,
+    wants: (state.wants ?? state.purchaseGoals ?? defaultState.wants).map((want) => ({
+      id: want.id,
+      item: want.item,
+      price: want.price,
+    })),
     meals: state.meals ?? defaultState.meals,
     mealCatalog: state.mealCatalog ?? defaultState.mealCatalog,
   };
@@ -435,7 +436,7 @@ export default function Home() {
     {
       id: "phil-welcome",
       role: "assistant",
-      content: "I am Phil, your LifeOS advisor. Ask me anything about your stash, bills, trips, food, or buy list.",
+      content: "I am Phil, your LifeOS advisor. Ask me anything about your stash, bills, trips, food, or wants.",
     },
   ]);
   const [draftTrip, setDraftTrip] = useState({
@@ -672,7 +673,10 @@ export default function Home() {
   const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
   const monthlyCategory = state.categories.find((category) => category.id === "monthly");
+  const bigGoalsCategory = state.categories.find((category) => category.id === "big-goals");
   const monthlyEnvelope = buyingPower * ((monthlyCategory?.percent ?? 0) / 100);
+  const bigGoalsAllocation = buyingPower * ((bigGoalsCategory?.percent ?? 0) / 100);
+  const wantsTotal = state.wants.reduce((sum, want) => sum + want.price, 0);
 
   const monthlyDue = state.obligations.reduce((sum, obligation) => {
     const remaining = remainingMonths(obligation);
@@ -1116,13 +1120,30 @@ export default function Home() {
     }));
   }
 
-  function updatePurchaseGoal(id: string, patch: Partial<PurchaseGoal>) {
+  function updateWant(id: string, patch: Partial<Want>) {
     setState((current) => ({
       ...current,
-      purchaseGoals: current.purchaseGoals.map((goal) =>
-        goal.id === id ? { ...goal, ...patch } : goal,
-      ),
+      wants: current.wants.map((want) => (want.id === id ? { ...want, ...patch } : want)),
     }));
+  }
+
+  function moveWant(id: string, direction: -1 | 1) {
+    setState((current) => {
+      const currentIndex = current.wants.findIndex((want) => want.id === id);
+      const nextIndex = currentIndex + direction;
+
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= current.wants.length) {
+        return current;
+      }
+
+      const wants = [...current.wants];
+      [wants[currentIndex], wants[nextIndex]] = [wants[nextIndex], wants[currentIndex]];
+
+      return {
+        ...current,
+        wants,
+      };
+    });
   }
 
   function updateTrip(id: string, patch: Partial<Trip>) {
@@ -1173,17 +1194,15 @@ export default function Home() {
     }));
   }
 
-  function addPurchaseGoal() {
+  function addWant() {
     setState((current) => ({
       ...current,
-      purchaseGoals: [
-        ...current.purchaseGoals,
+      wants: [
+        ...current.wants,
         {
-          id: createId("purchase"),
-          item: "New gear",
+          id: createId("want"),
+          item: "New want",
           price: 10000,
-          availableFund: 0,
-          monthlyContribution: 1000,
         },
       ],
     }));
@@ -1646,12 +1665,12 @@ export default function Home() {
                 Monthly Obligations
               </button>
               <button
-                className={activeBudgetTab === "buy-list" ? styles.activeSubTab : ""}
+                className={activeBudgetTab === "wants" ? styles.activeSubTab : ""}
                 type="button"
-                onClick={() => setActiveBudgetTab("buy-list")}
+                onClick={() => setActiveBudgetTab("wants")}
               >
                 <Gamepad2 size={16} aria-hidden="true" />
-                Buy List
+                Wants
               </button>
             </nav>
 
@@ -1981,55 +2000,69 @@ export default function Home() {
               </section>
             )}
 
-            {activeBudgetTab === "buy-list" && (
+            {activeBudgetTab === "wants" && (
               <article className={`${styles.widePanel} ${styles.purchasePanel}`}>
                 <div className={styles.sectionHead}>
                   <div className={styles.panelTitle}>
                     <Gamepad2 size={20} aria-hidden="true" />
                     <div>
-                      <h2>Buy List</h2>
-                      <p>Track gear goals against your available fund and monthly contribution.</p>
+                      <h2>Wants</h2>
+                      <p>Stack what you want and check it against your Big Goals allocation.</p>
                     </div>
                   </div>
-                  <button className={styles.iconButton} type="button" onClick={addPurchaseGoal} title="Add item">
+                  <button className={styles.iconButton} type="button" onClick={addWant} title="Add want">
                     <Plus size={18} aria-hidden="true" />
                   </button>
                 </div>
 
+                <div className={styles.wantSummary}>
+                  <div>
+                    <span>Big Goals allocation</span>
+                    <strong>{currency.format(bigGoalsAllocation)}</strong>
+                  </div>
+                  <div>
+                    <span>Wants stacked</span>
+                    <strong>{currency.format(wantsTotal)}</strong>
+                  </div>
+                  <div>
+                    <span>After full stack</span>
+                    <strong className={bigGoalsAllocation - wantsTotal >= 0 ? styles.good : styles.warn}>
+                      {currency.format(bigGoalsAllocation - wantsTotal)}
+                    </strong>
+                  </div>
+                </div>
+
                 <div className={styles.purchaseList}>
-                  {state.purchaseGoals.map((goal) => {
-                    const remaining = Math.max(goal.price - goal.availableFund, 0);
-                    const readyMonths =
-                      remaining === 0
-                        ? 0
-                        : goal.monthlyContribution > 0
-                          ? Math.ceil(remaining / goal.monthlyContribution)
-                          : Infinity;
-                    const isSafe = remaining === 0 && monthlyRemaining >= 0;
-                    const progress = Math.min((goal.availableFund / Math.max(goal.price, 1)) * 100, 100);
+                  {state.wants.map((want, index) => {
+                    const stackCost = state.wants
+                      .slice(0, index + 1)
+                      .reduce((sum, stackedWant) => sum + stackedWant.price, 0);
+                    const stackRemaining = bigGoalsAllocation - stackCost;
+                    const isSafe = stackRemaining >= 0;
+                    const progress = Math.min((stackCost / Math.max(bigGoalsAllocation, 1)) * 100, 100);
 
                     return (
-                      <div className={styles.purchaseCard} key={goal.id}>
+                      <div className={styles.purchaseCard} key={want.id}>
                         <div className={styles.purchaseTop}>
                           <div className={styles.purchaseIcon}>
-                            <Gamepad2 size={22} aria-hidden="true" />
+                            <span>{index + 1}</span>
                           </div>
                           <div>
                             <input
-                              aria-label="Item name"
-                              value={goal.item}
-                              onChange={(event) => updatePurchaseGoal(goal.id, { item: event.target.value })}
+                              aria-label="Want name"
+                              value={want.item}
+                              onChange={(event) => updateWant(want.id, { item: event.target.value })}
                             />
-                            <span>{currency.format(goal.price)} target price</span>
+                            <span>{currency.format(want.price)} price</span>
                           </div>
                           <button
                             className={styles.ghostIcon}
                             type="button"
-                            title="Remove item"
+                            title="Remove want"
                             onClick={() =>
                               setState((current) => ({
                                 ...current,
-                                purchaseGoals: current.purchaseGoals.filter((item) => item.id !== goal.id),
+                                wants: current.wants.filter((item) => item.id !== want.id),
                               }))
                             }
                           >
@@ -2047,53 +2080,45 @@ export default function Home() {
                             <input
                               type="number"
                               min="0"
-                              value={goal.price}
-                              onChange={(event) => updatePurchaseGoal(goal.id, { price: Number(event.target.value) })}
+                              value={want.price}
+                              onChange={(event) => updateWant(want.id, { price: Number(event.target.value) })}
                             />
                           </label>
-                          <label>
-                            <span>Available tech fund</span>
-                            <input
-                              type="number"
-                              min="0"
-                              value={goal.availableFund}
-                              onChange={(event) =>
-                                updatePurchaseGoal(goal.id, { availableFund: Number(event.target.value) })
-                              }
-                            />
-                          </label>
-                          <label>
-                            <span>Monthly contribution</span>
-                            <input
-                              type="number"
-                              min="0"
-                              value={goal.monthlyContribution}
-                              onChange={(event) =>
-                                updatePurchaseGoal(goal.id, { monthlyContribution: Number(event.target.value) })
-                              }
-                            />
-                          </label>
+                          <div className={styles.stackControls} aria-label="Rearrange want stack">
+                            <button
+                              type="button"
+                              title="Move up"
+                              disabled={index === 0}
+                              onClick={() => moveWant(want.id, -1)}
+                            >
+                              <ChevronUp size={16} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Move down"
+                              disabled={index === state.wants.length - 1}
+                              onClick={() => moveWant(want.id, 1)}
+                            >
+                              <ChevronDown size={16} aria-hidden="true" />
+                            </button>
+                          </div>
                         </div>
 
                         <div className={styles.purchaseStats}>
                           <div>
-                            <span>Remaining</span>
-                            <strong>{currency.format(remaining)}</strong>
+                            <span>Stack cost</span>
+                            <strong>{currency.format(stackCost)}</strong>
                           </div>
                           <div>
-                            <span>Ready in</span>
-                            <strong>
-                              {readyMonths === Infinity
-                                ? "No plan"
-                                : readyMonths === 0
-                                  ? "Now"
-                                  : `${readyMonths} months`}
+                            <span>Big Goals left</span>
+                            <strong className={isSafe ? styles.good : styles.warn}>
+                              {currency.format(stackRemaining)}
                             </strong>
                           </div>
                           <div>
                             <span>Status</span>
                             <strong className={isSafe ? styles.safePill : styles.notSafePill}>
-                              {isSafe ? "Safe to buy" : "Not yet safe"}
+                              {isSafe ? "Can buy" : "Not yet"}
                             </strong>
                           </div>
                         </div>
