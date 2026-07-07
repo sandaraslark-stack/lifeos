@@ -41,6 +41,7 @@ When the env vars are present, LifeOS signs in anonymously and syncs one protect
 ## Current features
 
 - Manual monthly stash amount
+- Monthly stash history with one locked update per month and trend analytics
 - Adjustable buying power percentage, starting at 25%
 - Editable budget categories with optional sub-allocations
 - Monthly obligations with fixed bills and debts that count down by start month

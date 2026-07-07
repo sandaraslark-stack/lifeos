@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  TrendingDown,
   TrendingUp,
   Trash2,
   Utensils,
@@ -91,8 +92,16 @@ type MealCatalogItem = {
   notes: string;
 };
 
+type StashHistoryEntry = {
+  id: string;
+  month: string;
+  amount: number;
+  recordedAt: string;
+};
+
 type LifeOSState = {
   stash: number;
+  stashHistory: StashHistoryEntry[];
   buyingPowerPercent: number;
   categories: Category[];
   obligations: Obligation[];
@@ -105,6 +114,7 @@ type LifeOSState = {
 
 type ActiveTab = "overview" | "budget" | "travel" | "food";
 type BudgetTab = "allocations" | "obligations" | "wants";
+type OverviewTab = "main" | "stash-trend";
 type PhilMessage = {
   id: string;
   role: "user" | "assistant";
@@ -118,6 +128,7 @@ type AuthMode = "sign-in" | "sign-up";
 
 const defaultState: LifeOSState = {
   stash: 250000,
+  stashHistory: [],
   buyingPowerPercent: 25,
   categories: [
     { id: "wealth", name: "Wealth Building", percent: 35, destination: "Brokerage / Investments" },
@@ -260,6 +271,14 @@ function compareDateStrings(a: string, b: string) {
   return parseLocalDate(a).getTime() - parseLocalDate(b).getTime();
 }
 
+function formatMonthLabel(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+
+  return new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(
+    new Date(year, monthNumber - 1, 1),
+  );
+}
+
 function isBetween(day: string, start: string, end: string) {
   return compareDateStrings(day, start) >= 0 && compareDateStrings(day, end) <= 0;
 }
@@ -272,6 +291,7 @@ function normalizeLifeOSState(state: Partial<LifeOSState> & { purchaseGoals?: Wa
   return {
     ...defaultState,
     ...state,
+    stashHistory: state.stashHistory ?? defaultState.stashHistory,
     categories: state.categories ?? defaultState.categories,
     obligations: state.obligations ?? defaultState.obligations,
     trips: state.trips ?? defaultState.trips,
@@ -401,8 +421,10 @@ function getSupabaseSyncError(error: unknown): SyncState {
 export default function Home() {
   const state = useSyncExternalStore(subscribeToLifeOSState, readLifeOSState, () => defaultState);
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
+  const [activeOverviewTab, setActiveOverviewTab] = useState<OverviewTab>("main");
   const [activeBudgetTab, setActiveBudgetTab] = useState<BudgetTab>("allocations");
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>("wealth");
+  const [stashDraft, setStashDraft] = useState(() => String(readLifeOSState().stash));
   const [syncState, setSyncState] = useState<SyncState>(() =>
     syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"),
   );
@@ -456,6 +478,35 @@ export default function Home() {
   function setState(updater: LifeOSState | ((current: LifeOSState) => LifeOSState)) {
     const current = readLifeOSState();
     writeLifeOSState(typeof updater === "function" ? updater(current) : updater);
+  }
+
+  function saveMonthlyStash() {
+    const amount = Number(stashDraft);
+    const currentMonth = monthInputValue(new Date());
+
+    if (!Number.isFinite(amount) || amount < 0) {
+      return;
+    }
+
+    setState((current) => {
+      if (current.stashHistory.some((entry) => entry.month === currentMonth)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        stash: amount,
+        stashHistory: [
+          ...current.stashHistory,
+          {
+            id: createId("stash-history"),
+            month: currentMonth,
+            amount,
+            recordedAt: new Date().toISOString(),
+          },
+        ],
+      };
+    });
   }
 
   async function loadCloudState(userId: string) {
@@ -672,6 +723,28 @@ export default function Home() {
 
     return () => window.clearTimeout(timer);
   }, [state]);
+
+  const currentMonthKey = monthInputValue(now);
+  const stashHistory = state.stashHistory.toSorted((a, b) => a.month.localeCompare(b.month));
+  const currentMonthStashEntry = stashHistory.find((entry) => entry.month === currentMonthKey);
+  const latestStashEntry = stashHistory.at(-1);
+  const previousStashEntry = stashHistory.at(-2);
+  const latestStashAmount = latestStashEntry?.amount ?? state.stash;
+  const previousStashAmount = previousStashEntry?.amount ?? latestStashAmount;
+  const stashDelta = latestStashEntry && previousStashEntry ? latestStashAmount - previousStashAmount : 0;
+  const stashTrend =
+    stashHistory.length < 2 ? "Not enough data" : stashDelta > 0 ? "Getting higher" : stashDelta < 0 ? "Getting lower" : "Flat";
+  const stashTrendTone = stashDelta > 0 ? "good" : stashDelta < 0 ? "warn" : "steady";
+  const stashChanges = stashHistory.slice(1).map((entry, index) => entry.amount - stashHistory[index].amount);
+  const averageStashChange =
+    stashChanges.length > 0
+      ? stashChanges.reduce((sum, change) => sum + change, 0) / stashChanges.length
+      : 0;
+  const stashHigh = stashHistory.length ? Math.max(...stashHistory.map((entry) => entry.amount)) : state.stash;
+  const stashLow = stashHistory.length ? Math.min(...stashHistory.map((entry) => entry.amount)) : state.stash;
+  const stashRange = Math.max(stashHigh - stashLow, 1);
+  const recentStashHistory = stashHistory.slice(-6);
+  const canSaveMonthlyStash = !currentMonthStashEntry && Number(stashDraft) >= 0;
 
   const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
@@ -1404,100 +1477,201 @@ export default function Home() {
         </nav>
 
         <section className={styles.hero}>
-          <div className={styles.heroCopy}>
-            <p className={styles.eyebrow}>
-              <Activity size={15} aria-hidden="true" />
-              Realtime analytics
-            </p>
-            <h1>{liveMonth} money cockpit</h1>
-            <p className={styles.heroSubcopy}>
-              Live view of stash health, monthly power, protected cash, and bills pressure.
-            </p>
-            <div className={styles.powerLevelCard}>
-              <div className={styles.powerOrb}>
-                <Crown size={24} aria-hidden="true" />
-                <strong>LVL {powerLevelIndex + 1}</strong>
-              </div>
-              <div className={styles.powerLevelBody}>
-                <div>
-                  <span>Buying Power Level</span>
-                  <strong>{powerLevel.name}</strong>
-                  <small>{powerLevel.tone} mode</small>
-                </div>
-                <div className={styles.powerMeter}>
-                  <i style={{ width: `${Math.max(0, Math.min(powerLevelProgress, 100))}%` }} />
-                </div>
-                <div className={styles.powerStats}>
-                  <span>Stash {Math.round(Math.min(state.stash / 250000, 1) * 100)}%</span>
-                  <span>Protected {Math.round(protectedRatio * 100)}%</span>
-                  <span>Runway {monthlyRemaining >= 0 ? "Clear" : "Tight"}</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <nav className={styles.overviewTabs} aria-label="Money cockpit views">
+            <button
+              className={activeOverviewTab === "main" ? styles.activeOverviewTab : ""}
+              type="button"
+              onClick={() => setActiveOverviewTab("main")}
+            >
+              <LayoutDashboard size={16} aria-hidden="true" />
+              Main
+            </button>
+            <button
+              className={activeOverviewTab === "stash-trend" ? styles.activeOverviewTab : ""}
+              type="button"
+              onClick={() => setActiveOverviewTab("stash-trend")}
+            >
+              <TrendingUp size={16} aria-hidden="true" />
+              Stash Trend
+            </button>
+          </nav>
 
-          <div className={styles.analyticsBoard}>
-            <div className={styles.liveBadge}>
-              <Sparkles size={15} aria-hidden="true" />
-              Updated {liveTime}
-            </div>
-            <div className={styles.analyticsControls}>
-              <label>
-                <span>Total stash</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={state.stash}
-                  onChange={(event) =>
-                    setState((current) => ({ ...current, stash: Number(event.target.value) }))
-                  }
-                />
-              </label>
-              <label>
-                <span>Monthly power rate</span>
-                <div className={styles.controlSlider}>
-                  <strong>{state.buyingPowerPercent}%</strong>
-                  <input
-                    type="range"
-                    min="5"
-                    max="60"
-                    step="1"
-                    value={state.buyingPowerPercent}
-                    onChange={(event) =>
-                      setState((current) => ({
-                        ...current,
-                        buyingPowerPercent: Number(event.target.value),
-                      }))
-                    }
-                  />
+          {activeOverviewTab === "main" ? (
+            <>
+              <div className={styles.heroCopy}>
+                <p className={styles.eyebrow}>
+                  <Activity size={15} aria-hidden="true" />
+                  Realtime analytics
+                </p>
+                <h1>{liveMonth} money cockpit</h1>
+                <p className={styles.heroSubcopy}>
+                  Live view of stash health, monthly power, protected cash, and bills pressure.
+                </p>
+                <div className={styles.powerLevelCard}>
+                  <div className={styles.powerOrb}>
+                    <Crown size={24} aria-hidden="true" />
+                    <strong>LVL {powerLevelIndex + 1}</strong>
+                  </div>
+                  <div className={styles.powerLevelBody}>
+                    <div>
+                      <span>Buying Power Level</span>
+                      <strong>{powerLevel.name}</strong>
+                      <small>{powerLevel.tone} mode</small>
+                    </div>
+                    <div className={styles.powerMeter}>
+                      <i style={{ width: `${Math.max(0, Math.min(powerLevelProgress, 100))}%` }} />
+                    </div>
+                    <div className={styles.powerStats}>
+                      <span>Stash {Math.round(Math.min(state.stash / 250000, 1) * 100)}%</span>
+                      <span>Protected {Math.round(protectedRatio * 100)}%</span>
+                      <span>Runway {monthlyRemaining >= 0 ? "Clear" : "Tight"}</span>
+                    </div>
+                  </div>
                 </div>
-              </label>
-            </div>
-            <div className={styles.analyticsGrid}>
-              <article className={styles.analyticsPrimary}>
-                <span>Stash</span>
-                <strong>{currency.format(state.stash)}</strong>
-                <p>Trading capital bank</p>
-              </article>
-              <article className={styles.analyticsPrimary}>
-                <span>Monthly Power</span>
-                <strong>{currency.format(buyingPower)}</strong>
-                <p>{state.buyingPowerPercent}% released this month</p>
-              </article>
-              <article>
-                <ShieldCheck size={18} aria-hidden="true" />
-                <span>Protected</span>
-                <strong>{currency.format(protectedCash)}</strong>
-              </article>
-              <article>
-                <TrendingUp size={18} aria-hidden="true" />
-                <span>Obligation runway</span>
-                <strong className={monthlyRemaining >= 0 ? styles.good : styles.warn}>
-                  {currency.format(monthlyRemaining)}
-                </strong>
-              </article>
-            </div>
-          </div>
+              </div>
+
+              <div className={styles.analyticsBoard}>
+                <div className={styles.liveBadge}>
+                  <Sparkles size={15} aria-hidden="true" />
+                  Updated {liveTime}
+                </div>
+                <div className={styles.analyticsControls}>
+                  <label>
+                    <span>Total stash</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={stashDraft}
+                      disabled={Boolean(currentMonthStashEntry)}
+                      onChange={(event) => setStashDraft(event.target.value)}
+                    />
+                    <button
+                      className={styles.monthlyStashButton}
+                      type="button"
+                      disabled={!canSaveMonthlyStash}
+                      onClick={saveMonthlyStash}
+                    >
+                      {currentMonthStashEntry ? "Recorded this month" : "Save monthly stash"}
+                    </button>
+                  </label>
+                  <label>
+                    <span>Monthly power rate</span>
+                    <div className={styles.controlSlider}>
+                      <strong>{state.buyingPowerPercent}%</strong>
+                      <input
+                        type="range"
+                        min="5"
+                        max="60"
+                        step="1"
+                        value={state.buyingPowerPercent}
+                        onChange={(event) =>
+                          setState((current) => ({
+                            ...current,
+                            buyingPowerPercent: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </div>
+                  </label>
+                </div>
+                <div className={styles.analyticsGrid}>
+                  <article className={styles.analyticsPrimary}>
+                    <span>Stash</span>
+                    <strong>{currency.format(state.stash)}</strong>
+                    <p>
+                      {currentMonthStashEntry
+                        ? `Locked for ${formatMonthLabel(currentMonthKey)}`
+                        : "Awaiting this month record"}
+                    </p>
+                  </article>
+                  <article className={styles.analyticsPrimary}>
+                    <span>Monthly Power</span>
+                    <strong>{currency.format(buyingPower)}</strong>
+                    <p>{state.buyingPowerPercent}% released this month</p>
+                  </article>
+                  <article>
+                    <ShieldCheck size={18} aria-hidden="true" />
+                    <span>Protected</span>
+                    <strong>{currency.format(protectedCash)}</strong>
+                  </article>
+                  <article>
+                    <TrendingUp size={18} aria-hidden="true" />
+                    <span>Obligation runway</span>
+                    <strong className={monthlyRemaining >= 0 ? styles.good : styles.warn}>
+                      {currency.format(monthlyRemaining)}
+                    </strong>
+                  </article>
+                </div>
+              </div>
+            </>
+          ) : (
+            <section className={styles.stashTrendPanel}>
+              <div className={styles.stashTrendHead}>
+                <div>
+                  <p className={styles.eyebrow}>
+                    <Activity size={15} aria-hidden="true" />
+                    Monthly stash integrity
+                  </p>
+                  <h2>{stashTrend}</h2>
+                  <p>
+                    {stashHistory.length < 2
+                      ? "Record at least two months to unlock a reliable trend."
+                      : `Latest movement is ${currency.format(stashDelta)} from ${formatMonthLabel(
+                          previousStashEntry?.month ?? currentMonthKey,
+                        )}.`}
+                  </p>
+                </div>
+                <div className={[styles.trendSignal, styles[stashTrendTone]].join(" ")}>
+                  {stashDelta < 0 ? <TrendingDown size={24} aria-hidden="true" /> : <TrendingUp size={24} aria-hidden="true" />}
+                  <strong>{currency.format(stashDelta)}</strong>
+                  <span>latest change</span>
+                </div>
+              </div>
+
+              <div className={styles.stashTrendStats}>
+                <article>
+                  <span>Current stash</span>
+                  <strong>{currency.format(state.stash)}</strong>
+                  <p>{currentMonthStashEntry ? "This month is locked" : "This month can still be recorded"}</p>
+                </article>
+                <article>
+                  <span>Average change</span>
+                  <strong className={averageStashChange >= 0 ? styles.good : styles.warn}>
+                    {currency.format(averageStashChange)}
+                  </strong>
+                  <p>Average month-to-month move</p>
+                </article>
+                <article>
+                  <span>Highest month</span>
+                  <strong>{currency.format(stashHigh)}</strong>
+                  <p>Best recorded stash</p>
+                </article>
+                <article>
+                  <span>Lowest month</span>
+                  <strong>{currency.format(stashLow)}</strong>
+                  <p>Lowest recorded stash</p>
+                </article>
+              </div>
+
+              <div className={styles.stashChart}>
+                {recentStashHistory.length ? (
+                  recentStashHistory.map((entry) => {
+                    const height = 18 + ((entry.amount - stashLow) / stashRange) * 82;
+
+                    return (
+                      <div key={entry.id}>
+                        <span>{currency.format(entry.amount)}</span>
+                        <i style={{ height: `${height}%` }} />
+                        <small>{formatMonthLabel(entry.month)}</small>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p>No monthly stash records yet.</p>
+                )}
+              </div>
+            </section>
+          )}
         </section>
 
         {activeTab === "overview" && (
