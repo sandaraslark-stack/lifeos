@@ -1811,6 +1811,8 @@
 }
 
 .selectedMealHeader span,
+.mealSearchBox span,
+.mealLibraryForm label span,
 .mealEditorForm label span,
 .foodSuggestions h3 {
   color: #557086;
@@ -1833,6 +1835,39 @@
 .mealEditorForm label {
   display: grid;
   gap: 7px;
+}
+
+.mealSearchBox {
+  display: grid;
+  gap: 8px;
+}
+
+.mealSearchBox div {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.94);
+  overflow: hidden;
+}
+
+.mealSearchBox svg {
+  justify-self: center;
+  color: #0284c7;
+}
+
+.mealSearchBox input {
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: #102033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  outline: none;
+  padding-right: 12px;
 }
 
 .mealEditorForm input,
@@ -1910,6 +1945,111 @@
   margin: 0;
   color: #557086;
   font-size: 13px;
+}
+
+.mealsLibrary {
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(186, 230, 253, 0.72);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 6% 8%, rgba(125, 211, 252, 0.24), transparent 30%),
+    rgba(255, 255, 255, 0.78);
+  box-shadow: 0 22px 50px rgba(14, 116, 144, 0.12);
+  backdrop-filter: blur(20px);
+  padding: 18px;
+}
+
+.mealLibraryForm {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1fr) 130px;
+  gap: 10px;
+  align-items: end;
+}
+
+.mealLibraryForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.mealLibraryForm input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #102033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.mealLibraryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.mealLibraryCard {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(219, 234, 254, 0.92);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(240, 249, 255, 0.84));
+  padding: 12px;
+}
+
+.mealLibraryCard strong,
+.mealLibraryCard p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mealLibraryCard strong {
+  display: block;
+  color: #102033;
+  font-size: 14px;
+}
+
+.mealLibraryCard p {
+  display: -webkit-box;
+  min-height: 32px;
+  margin: 4px 0 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #557086;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.mealLibraryCard > div:last-child {
+  display: flex;
+  gap: 7px;
+}
+
+.mealLibraryCard button {
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  height: 36px;
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0284c7;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.mealLibraryCard button:first-child {
+  min-width: 54px;
+  background: linear-gradient(135deg, #e0f2fe, #ffffff);
 }
 
 .philWidget {
@@ -2419,12 +2559,22 @@
   .obligationBoard,
   .compactRow,
   .purchaseInputs,
-  .purchaseStats {
+  .purchaseStats,
+  .mealLibraryForm,
+  .mealLibraryCard {
     grid-template-columns: 1fr;
   }
 
   .purchaseList {
     grid-template-columns: 1fr;
+  }
+
+  .mealLibraryCard > div:last-child {
+    justify-content: stretch;
+  }
+
+  .mealLibraryCard button {
+    flex: 1;
   }
 
   .donut {

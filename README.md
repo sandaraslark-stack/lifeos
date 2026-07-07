@@ -47,5 +47,5 @@ When the env vars are present, LifeOS signs in anonymously and syncs one protect
 - Buy List for gear or personal purchase goals
 - Travel goal form with destination, purpose, budget, and date range
 - Calendar that highlights selected travel ranges and saved trips with optional image previews
-- Food planner with brunch and dinner calendar slots plus reusable past meal suggestions
+- Food planner with brunch and dinner calendar slots plus a saved Meals library for searchable meal reuse
 - Phil, a draggable LifeOS advisor that can answer questions about the full synced app state

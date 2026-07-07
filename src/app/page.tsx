@@ -20,6 +20,7 @@ import {
   PiggyBank,
   Plane,
   Plus,
+  Search,
   Send,
   ShieldCheck,
   Sparkles,
@@ -85,6 +86,12 @@ type MealPlan = {
   notes: string;
 };
 
+type MealCatalogItem = {
+  id: string;
+  name: string;
+  notes: string;
+};
+
 type LifeOSState = {
   stash: number;
   buyingPowerPercent: number;
@@ -93,6 +100,7 @@ type LifeOSState = {
   trips: Trip[];
   purchaseGoals: PurchaseGoal[];
   meals: MealPlan[];
+  mealCatalog: MealCatalogItem[];
 };
 
 type ActiveTab = "overview" | "budget" | "travel" | "food";
@@ -186,6 +194,11 @@ const defaultState: LifeOSState = {
       notes: "Cook extra for leftovers.",
     },
   ],
+  mealCatalog: [
+    { id: "catalog-adobo", name: "Chicken adobo", notes: "Good dinner, cook extra for leftovers." },
+    { id: "catalog-eggs-rice", name: "Eggs, rice, and coffee", notes: "Fast brunch for busy trading days." },
+    { id: "catalog-tuna-pasta", name: "Tuna pasta", notes: "Easy pantry meal." },
+  ],
 };
 
 const storageKey = "lifeos-state";
@@ -265,6 +278,7 @@ function normalizeLifeOSState(state: Partial<LifeOSState>): LifeOSState {
     trips: state.trips ?? defaultState.trips,
     purchaseGoals: state.purchaseGoals ?? defaultState.purchaseGoals,
     meals: state.meals ?? defaultState.meals,
+    mealCatalog: state.mealCatalog ?? defaultState.mealCatalog,
   };
 }
 
@@ -358,6 +372,8 @@ export default function Home() {
     meal: MealPlan["meal"];
   } | null>(null);
   const [mealDraft, setMealDraft] = useState({ food: "", notes: "" });
+  const [mealSearch, setMealSearch] = useState("");
+  const [mealLibraryDraft, setMealLibraryDraft] = useState({ name: "", notes: "" });
   const [philOpen, setPhilOpen] = useState(false);
   const [philPosition, setPhilPosition] = useState({ x: 0, y: 0 });
   const [philInput, setPhilInput] = useState("");
@@ -674,14 +690,32 @@ export default function Home() {
     .toSorted((a, b) => compareDateStrings(a.startDate, b.startDate))
     .find((trip) => compareDateStrings(trip.endDate, dateInputValue(new Date())) >= 0);
 
-  const foodSuggestions = Array.from(
-    new Set(
-      state.meals
-        .map((meal) => meal.food.trim())
-        .filter(Boolean)
-        .toSorted((a, b) => a.localeCompare(b)),
-    ),
-  ).slice(0, 10);
+  const foodSuggestions = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          [
+            ...state.mealCatalog.map((meal) => [meal.name.trim().toLowerCase(), meal.name.trim()] as const),
+            ...state.meals.map((meal) => [meal.food.trim().toLowerCase(), meal.food.trim()] as const),
+          ].filter(([, name]) => Boolean(name)),
+        ).values(),
+      ).toSorted((a, b) => a.localeCompare(b)),
+    [state.mealCatalog, state.meals],
+  );
+
+  const filteredMealCatalog = useMemo(() => {
+    const search = mealSearch.trim().toLowerCase();
+
+    return state.mealCatalog
+      .filter((meal) => {
+        if (!search) {
+          return true;
+        }
+
+        return `${meal.name} ${meal.notes}`.toLowerCase().includes(search);
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name));
+  }, [mealSearch, state.mealCatalog]);
 
   const calendarDays = useMemo(() => {
     const year = activeMonth.getFullYear();
@@ -828,6 +862,56 @@ export default function Home() {
       ),
     }));
     setMealDraft({ food: "", notes: "" });
+  }
+
+  function applyMealFromCatalog(meal: MealCatalogItem) {
+    setMealDraft({
+      food: meal.name,
+      notes: meal.notes,
+    });
+    setMealSearch(meal.name);
+  }
+
+  function addMealToCatalog() {
+    const name = mealLibraryDraft.name.trim();
+
+    if (!name) {
+      return;
+    }
+
+    setState((current) => {
+      const existing = current.mealCatalog.find((meal) => meal.name.trim().toLowerCase() === name.toLowerCase());
+
+      if (existing) {
+        return {
+          ...current,
+          mealCatalog: current.mealCatalog.map((meal) =>
+            meal.id === existing.id ? { ...meal, name, notes: mealLibraryDraft.notes } : meal,
+          ),
+        };
+      }
+
+      return {
+        ...current,
+        mealCatalog: [
+          ...current.mealCatalog,
+          {
+            id: createId("meal-catalog"),
+            name,
+            notes: mealLibraryDraft.notes,
+          },
+        ],
+      };
+    });
+    setMealSearch(name);
+    setMealLibraryDraft({ name: "", notes: "" });
+  }
+
+  function deleteMealFromCatalog(id: string) {
+    setState((current) => ({
+      ...current,
+      mealCatalog: current.mealCatalog.filter((meal) => meal.id !== id),
+    }));
   }
 
   function startPhilDrag(event: ReactPointerEvent<HTMLElement>) {
@@ -2254,9 +2338,21 @@ export default function Home() {
                   <ChefHat size={20} aria-hidden="true" />
                   <div>
                     <h2>Food Planner</h2>
-                    <p>Plan brunch and dinner, then reuse past meals when you need ideas.</p>
+                    <p>Plan brunch and dinner, then search your saved meals when you need ideas.</p>
                   </div>
                 </div>
+
+                <label className={styles.mealSearchBox}>
+                  <span>Search meals</span>
+                  <div>
+                    <Search size={16} aria-hidden="true" />
+                    <input
+                      value={mealSearch}
+                      onChange={(event) => setMealSearch(event.target.value)}
+                      placeholder="Search adobo, pasta, brunch..."
+                    />
+                  </div>
+                </label>
 
                 {selectedMealSlot ? (
                   <div className={styles.mealEditorForm}>
@@ -2273,7 +2369,7 @@ export default function Home() {
                       <input
                         value={mealDraft.food}
                         onChange={(event) => setMealDraft((current) => ({ ...current, food: event.target.value }))}
-                        placeholder="What are we eating?"
+                        placeholder="Type manually or pick from saved meals"
                         list="food-suggestions"
                       />
                     </label>
@@ -2308,10 +2404,10 @@ export default function Home() {
                 )}
 
                 <div className={styles.foodSuggestions}>
-                  <h3>Past food ideas</h3>
+                  <h3>Quick ideas</h3>
                   {foodSuggestions.length ? (
                     <div>
-                      {foodSuggestions.map((food) => (
+                      {foodSuggestions.slice(0, 10).map((food) => (
                         <button
                           type="button"
                           key={food}
@@ -2326,6 +2422,65 @@ export default function Home() {
                   )}
                 </div>
               </aside>
+            </section>
+
+            <section className={styles.mealsLibrary}>
+              <div className={styles.panelTitle}>
+                <Utensils size={20} aria-hidden="true" />
+                <div>
+                  <h2>Meals</h2>
+                  <p>Add meals you cook often. Search them above, then use one inside brunch or dinner.</p>
+                </div>
+              </div>
+
+              <div className={styles.mealLibraryForm}>
+                <label>
+                  <span>Meal name</span>
+                  <input
+                    value={mealLibraryDraft.name}
+                    onChange={(event) => setMealLibraryDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Ex. Beef tapa"
+                  />
+                </label>
+                <label>
+                  <span>Notes</span>
+                  <input
+                    value={mealLibraryDraft.notes}
+                    onChange={(event) => setMealLibraryDraft((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder="Ingredients, prep, why you like it..."
+                  />
+                </label>
+                <button className={styles.primaryButton} type="button" onClick={addMealToCatalog}>
+                  Add meal
+                </button>
+              </div>
+
+              <div className={styles.mealLibraryGrid}>
+                {filteredMealCatalog.length ? (
+                  filteredMealCatalog.map((meal) => (
+                    <article className={styles.mealLibraryCard} key={meal.id}>
+                      <div>
+                        <strong>{meal.name}</strong>
+                        <p>{meal.notes || "No notes yet."}</p>
+                      </div>
+                      <div>
+                        <button type="button" onClick={() => applyMealFromCatalog(meal)}>
+                          Use
+                        </button>
+                        <button type="button" onClick={() => deleteMealFromCatalog(meal.id)} title={`Delete ${meal.name}`}>
+                          <Trash2 size={15} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                ) : (
+                  <div className={styles.foodEmptyState}>
+                    <Search size={26} aria-hidden="true" />
+                    <strong>No meals found</strong>
+                    <span>Add a meal or change the search above.</span>
+                  </div>
+                )}
+              </div>
             </section>
           </section>
         )}
