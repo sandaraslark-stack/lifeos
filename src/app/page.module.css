@@ -1127,7 +1127,6 @@
 
 .field input,
 .tripForm input,
-.tripImageInput,
 .categoryRow input,
 .obligationCard input,
 .obligationCard select,
@@ -1153,7 +1152,6 @@
 .compactRow input:focus,
 .debtRow input:focus,
 .purchaseCard input:focus,
-.tripImageInput:focus,
 .subAllocationRow input:focus {
   border-color: #38bdf8;
   outline: 4px solid rgba(56, 189, 248, 0.18);
@@ -2238,10 +2236,6 @@
   min-height: 42px;
   border-radius: 999px;
   box-shadow: 0 8px 18px rgba(14, 116, 144, 0.12);
-}
-
-.tripImageInput {
-  margin-top: 8px;
 }
 
 .calendarPanel {

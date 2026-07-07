@@ -2055,16 +2055,6 @@ export default function Home() {
                       }
                     />
                   </label>
-                  <label>
-                    <span>Picture URL</span>
-                    <input
-                      value={draftTrip.imageUrl}
-                      onChange={(event) =>
-                        setDraftTrip((current) => ({ ...current, imageUrl: event.target.value }))
-                      }
-                      placeholder="https://..."
-                    />
-                  </label>
                   <label className={styles.uploadButton}>
                     <input
                       type="file"
@@ -2115,13 +2105,6 @@ export default function Home() {
                         <span>
                           {trip.startDate} to {trip.endDate} - {currency.format(trip.budget)}
                         </span>
-                        <input
-                          className={styles.tripImageInput}
-                          value={trip.imageUrl ?? ""}
-                          onChange={(event) => updateTrip(trip.id, { imageUrl: event.target.value })}
-                          placeholder="Add picture URL for hover preview"
-                          aria-label={`${trip.whereTo} picture URL`}
-                        />
                         <label className={styles.tripUploadButton}>
                           <input
                             type="file"
