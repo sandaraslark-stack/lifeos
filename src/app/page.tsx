@@ -11,6 +11,7 @@ import {
   Coins,
   Compass,
   Crown,
+  Database,
   Gamepad2,
   LayoutDashboard,
   MapPin,
@@ -24,7 +25,8 @@ import {
   Trash2,
   WalletCards,
 } from "lucide-react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { getSupabaseBrowserClient } from "@/lib/supabase";
 import styles from "./page.module.css";
 
 type CategorySubItem = {
@@ -81,6 +83,10 @@ type LifeOSState = {
 
 type ActiveTab = "overview" | "budget" | "travel";
 type BudgetTab = "allocations" | "obligations" | "buy-list";
+type SyncState = {
+  status: "Local only" | "Connecting" | "Synced" | "Saving" | "Error";
+  detail: string;
+};
 
 const defaultState: LifeOSState = {
   stash: 250000,
@@ -271,11 +277,20 @@ function writeLifeOSState(nextState: LifeOSState) {
   window.dispatchEvent(new Event("lifeos-state-change"));
 }
 
+function syncStateFromDetail(status: SyncState["status"], detail: string): SyncState {
+  return { status, detail };
+}
+
 export default function Home() {
   const state = useSyncExternalStore(subscribeToLifeOSState, readLifeOSState, () => defaultState);
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
   const [activeBudgetTab, setActiveBudgetTab] = useState<BudgetTab>("allocations");
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>("wealth");
+  const [syncState, setSyncState] = useState<SyncState>(() =>
+    syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"),
+  );
+  const cloudUserIdRef = useRef<string | null>(null);
+  const cloudReadyRef = useRef(false);
   const [now, setNow] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => {
     const today = new Date();
@@ -302,6 +317,131 @@ export default function Home() {
 
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = getSupabaseBrowserClient();
+
+    if (!supabase) {
+      return;
+    }
+
+    const supabaseClient = supabase;
+
+    async function connectToCloud() {
+      try {
+        await Promise.resolve();
+
+        if (cancelled) {
+          return;
+        }
+
+        setSyncState(syncStateFromDetail("Connecting", "Connecting to Supabase"));
+
+        const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        let user = sessionData.session?.user ?? null;
+
+        if (!user) {
+          const { data, error } = await supabaseClient.auth.signInAnonymously();
+
+          if (error) {
+            throw error;
+          }
+
+          user = data.user;
+        }
+
+        if (!user) {
+          throw new Error("Supabase did not return a user session.");
+        }
+
+        cloudUserIdRef.current = user.id;
+
+        const { data: remoteState, error: readError } = await supabaseClient
+          .from("lifeos_states")
+          .select("data")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (readError) {
+          throw readError;
+        }
+
+        if (remoteState?.data) {
+          writeLifeOSState(normalizeLifeOSState(remoteState.data as Partial<LifeOSState>));
+        } else {
+          const { error: insertError } = await supabaseClient.from("lifeos_states").upsert(
+            {
+              user_id: user.id,
+              data: readLifeOSState(),
+            },
+            { onConflict: "user_id" },
+          );
+
+          if (insertError) {
+            throw insertError;
+          }
+        }
+
+        cloudReadyRef.current = true;
+
+        if (!cancelled) {
+          setSyncState(syncStateFromDetail("Synced", "Supabase cloud sync is active"));
+        }
+      } catch (error) {
+        cloudReadyRef.current = false;
+
+        if (!cancelled) {
+          setSyncState(
+            syncStateFromDetail(
+              "Error",
+              error instanceof Error ? error.message : "Supabase sync failed",
+            ),
+          );
+        }
+      }
+    }
+
+    connectToCloud();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    const userId = cloudUserIdRef.current;
+
+    if (!supabase || !userId || !cloudReadyRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setSyncState(syncStateFromDetail("Saving", "Saving LifeOS to Supabase"));
+
+      const { error } = await supabase.from("lifeos_states").upsert(
+        {
+          user_id: userId,
+          data: state,
+        },
+        { onConflict: "user_id" },
+      );
+
+      setSyncState(
+        error
+          ? syncStateFromDetail("Error", error.message)
+          : syncStateFromDetail("Synced", "Supabase cloud sync is active"),
+      );
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [state]);
 
   const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
@@ -593,6 +733,10 @@ export default function Home() {
             <div>
               <strong>LifeOS</strong>
               <span>Money, trips, goals</span>
+              <small className={styles.syncBadge} title={syncState.detail}>
+                <Database size={12} aria-hidden="true" />
+                {syncState.status}
+              </small>
             </div>
           </div>
 
