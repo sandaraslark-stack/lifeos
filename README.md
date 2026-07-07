@@ -44,7 +44,7 @@ When the env vars are present, LifeOS signs in anonymously and syncs one protect
 - Adjustable buying power percentage, starting at 25%
 - Editable budget categories with optional sub-allocations
 - Monthly obligations with fixed bills and debts that count down by start month
-- Wants stack for personal purchase goals with Big Goals allocation status
+- Wants stack for personal purchase goals with Guilt-Free Spending allocation status
 - Travel goal form with destination, purpose, budget, and date range
 - Calendar that highlights selected travel ranges and saved trips with optional image previews
 - Food planner with brunch and dinner calendar slots plus a saved Meals library for searchable meal reuse

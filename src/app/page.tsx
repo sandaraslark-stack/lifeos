@@ -673,9 +673,11 @@ export default function Home() {
   const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
   const monthlyCategory = state.categories.find((category) => category.id === "monthly");
-  const bigGoalsCategory = state.categories.find((category) => category.id === "big-goals");
+  const guiltFreeSpendingCategory = state.categories.find(
+    (category) => category.id === "spending" || category.name.toLowerCase() === "guilt-free spending",
+  );
   const monthlyEnvelope = buyingPower * ((monthlyCategory?.percent ?? 0) / 100);
-  const bigGoalsAllocation = buyingPower * ((bigGoalsCategory?.percent ?? 0) / 100);
+  const guiltFreeSpendingAllocation = buyingPower * ((guiltFreeSpendingCategory?.percent ?? 0) / 100);
   const wantsTotal = state.wants.reduce((sum, want) => sum + want.price, 0);
 
   const monthlyDue = state.obligations.reduce((sum, obligation) => {
@@ -2007,7 +2009,7 @@ export default function Home() {
                     <Gamepad2 size={20} aria-hidden="true" />
                     <div>
                       <h2>Wants</h2>
-                      <p>Stack what you want and check it against your Big Goals allocation.</p>
+                      <p>Stack what you want and check it against your Guilt-Free Spending allocation.</p>
                     </div>
                   </div>
                   <button className={styles.iconButton} type="button" onClick={addWant} title="Add want">
@@ -2017,8 +2019,8 @@ export default function Home() {
 
                 <div className={styles.wantSummary}>
                   <div>
-                    <span>Big Goals allocation</span>
-                    <strong>{currency.format(bigGoalsAllocation)}</strong>
+                    <span>Guilt-Free allocation</span>
+                    <strong>{currency.format(guiltFreeSpendingAllocation)}</strong>
                   </div>
                   <div>
                     <span>Wants stacked</span>
@@ -2026,8 +2028,8 @@ export default function Home() {
                   </div>
                   <div>
                     <span>After full stack</span>
-                    <strong className={bigGoalsAllocation - wantsTotal >= 0 ? styles.good : styles.warn}>
-                      {currency.format(bigGoalsAllocation - wantsTotal)}
+                    <strong className={guiltFreeSpendingAllocation - wantsTotal >= 0 ? styles.good : styles.warn}>
+                      {currency.format(guiltFreeSpendingAllocation - wantsTotal)}
                     </strong>
                   </div>
                 </div>
@@ -2037,9 +2039,9 @@ export default function Home() {
                     const stackCost = state.wants
                       .slice(0, index + 1)
                       .reduce((sum, stackedWant) => sum + stackedWant.price, 0);
-                    const stackRemaining = bigGoalsAllocation - stackCost;
+                    const stackRemaining = guiltFreeSpendingAllocation - stackCost;
                     const isSafe = stackRemaining >= 0;
-                    const progress = Math.min((stackCost / Math.max(bigGoalsAllocation, 1)) * 100, 100);
+                    const progress = Math.min((stackCost / Math.max(guiltFreeSpendingAllocation, 1)) * 100, 100);
 
                     return (
                       <div className={styles.purchaseCard} key={want.id}>
@@ -2110,7 +2112,7 @@ export default function Home() {
                             <strong>{currency.format(stackCost)}</strong>
                           </div>
                           <div>
-                            <span>Big Goals left</span>
+                            <span>Guilt-Free left</span>
                             <strong className={isSafe ? styles.good : styles.warn}>
                               {currency.format(stackRemaining)}
                             </strong>
