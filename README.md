@@ -28,7 +28,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
 ```
 
 When the env vars are present, LifeOS signs in anonymously and syncs one protected `lifeos_states` row per user through Row Level Security.
