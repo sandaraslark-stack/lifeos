@@ -830,7 +830,7 @@ export default function Home() {
     setMealDraft({ food: "", notes: "" });
   }
 
-  function startPhilDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+  function startPhilDrag(event: ReactPointerEvent<HTMLElement>) {
     const originX = event.clientX - philPosition.x;
     const originY = event.clientY - philPosition.y;
     const startX = event.clientX;
@@ -910,6 +910,16 @@ export default function Home() {
       setPhilLoading(false);
     }
   }
+
+  const philPanelStyle = useMemo<CSSProperties>(
+    () => ({
+      left: philPosition.x < 310 ? 0 : undefined,
+      right: philPosition.x < 310 ? undefined : 0,
+      top: philPosition.y < 430 ? 82 : undefined,
+      bottom: philPosition.y < 430 ? undefined : 82,
+    }),
+    [philPosition.x, philPosition.y],
+  );
 
   function readImageFile(file: File, onReady: (imageUrl: string) => void) {
     const reader = new FileReader();
@@ -2325,9 +2335,9 @@ export default function Home() {
           style={{ transform: `translate3d(${philPosition.x}px, ${philPosition.y}px, 0)` }}
         >
           {philOpen ? (
-            <section className={styles.philPanel}>
+            <section className={styles.philPanel} style={philPanelStyle}>
               <div className={styles.philHeader}>
-                <div>
+                <div onPointerDown={startPhilDrag} title="Drag Phil">
                   <Bot size={19} aria-hidden="true" />
                   <strong>Phil</strong>
                   <span>Life advisor</span>

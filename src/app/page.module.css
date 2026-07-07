@@ -1917,15 +1917,13 @@
   top: 0;
   left: 0;
   z-index: 60;
-  display: grid;
-  justify-items: end;
-  gap: 10px;
-  width: max-content;
-  max-width: calc(100vw - 24px);
+  width: 70px;
+  height: 70px;
   will-change: transform;
 }
 
 .philPanel {
+  position: absolute;
   width: min(360px, calc(100vw - 24px));
   overflow: hidden;
   box-shadow: 0 28px 70px rgba(2, 132, 199, 0.2), 0 8px 24px rgba(15, 23, 42, 0.08);
@@ -1948,6 +1946,13 @@
   grid-template-columns: 34px 1fr;
   column-gap: 10px;
   align-items: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.philHeader div:active {
+  cursor: grabbing;
 }
 
 .philHeader svg {
