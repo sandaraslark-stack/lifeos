@@ -935,6 +935,25 @@
   white-space: nowrap;
 }
 
+.wantSummary select {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #102033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  padding: 0 10px;
+}
+
+.wantSummary select:focus {
+  border-color: #38bdf8;
+  outline: 4px solid rgba(56, 189, 248, 0.18);
+}
+
 .purchaseList {
   position: relative;
   z-index: 1;

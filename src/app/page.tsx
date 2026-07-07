@@ -98,6 +98,7 @@ type LifeOSState = {
   obligations: Obligation[];
   trips: Trip[];
   wants: Want[];
+  wantAllocationCategoryId: string;
   meals: MealPlan[];
   mealCatalog: MealCatalogItem[];
 };
@@ -175,6 +176,7 @@ const defaultState: LifeOSState = {
       price: 35000,
     },
   ],
+  wantAllocationCategoryId: "spending",
   meals: [
     {
       id: "meal-demo-brunch",
@@ -278,6 +280,7 @@ function normalizeLifeOSState(state: Partial<LifeOSState> & { purchaseGoals?: Wa
       item: want.item,
       price: want.price,
     })),
+    wantAllocationCategoryId: state.wantAllocationCategoryId ?? defaultState.wantAllocationCategoryId,
     meals: state.meals ?? defaultState.meals,
     mealCatalog: state.mealCatalog ?? defaultState.mealCatalog,
   };
@@ -673,11 +676,14 @@ export default function Home() {
   const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
   const monthlyCategory = state.categories.find((category) => category.id === "monthly");
-  const guiltFreeSpendingCategory = state.categories.find(
-    (category) => category.id === "spending" || category.name.toLowerCase() === "guilt-free spending",
-  );
+  const wantAllocationCategory =
+    state.categories.find((category) => category.id === state.wantAllocationCategoryId) ??
+    state.categories.find(
+      (category) => category.id === "spending" || category.name.toLowerCase() === "guilt-free spending",
+    ) ??
+    state.categories[0];
   const monthlyEnvelope = buyingPower * ((monthlyCategory?.percent ?? 0) / 100);
-  const guiltFreeSpendingAllocation = buyingPower * ((guiltFreeSpendingCategory?.percent ?? 0) / 100);
+  const wantAllocationAmount = buyingPower * ((wantAllocationCategory?.percent ?? 0) / 100);
   const wantsTotal = state.wants.reduce((sum, want) => sum + want.price, 0);
 
   const monthlyDue = state.obligations.reduce((sum, obligation) => {
@@ -1126,6 +1132,13 @@ export default function Home() {
     setState((current) => ({
       ...current,
       wants: current.wants.map((want) => (want.id === id ? { ...want, ...patch } : want)),
+    }));
+  }
+
+  function updateWantAllocationCategory(categoryId: string) {
+    setState((current) => ({
+      ...current,
+      wantAllocationCategoryId: categoryId,
     }));
   }
 
@@ -2009,7 +2022,7 @@ export default function Home() {
                     <Gamepad2 size={20} aria-hidden="true" />
                     <div>
                       <h2>Wants</h2>
-                      <p>Stack what you want and check it against your Guilt-Free Spending allocation.</p>
+                      <p>Stack what you want and check it against the allocation you choose.</p>
                     </div>
                   </div>
                   <button className={styles.iconButton} type="button" onClick={addWant} title="Add want">
@@ -2019,8 +2032,19 @@ export default function Home() {
 
                 <div className={styles.wantSummary}>
                   <div>
-                    <span>Guilt-Free allocation</span>
-                    <strong>{currency.format(guiltFreeSpendingAllocation)}</strong>
+                    <span>Allocation source</span>
+                    <select
+                      aria-label="Wants allocation source"
+                      value={wantAllocationCategory?.id ?? ""}
+                      onChange={(event) => updateWantAllocationCategory(event.target.value)}
+                    >
+                      {state.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                    <strong>{currency.format(wantAllocationAmount)}</strong>
                   </div>
                   <div>
                     <span>Wants stacked</span>
@@ -2028,8 +2052,8 @@ export default function Home() {
                   </div>
                   <div>
                     <span>After full stack</span>
-                    <strong className={guiltFreeSpendingAllocation - wantsTotal >= 0 ? styles.good : styles.warn}>
-                      {currency.format(guiltFreeSpendingAllocation - wantsTotal)}
+                    <strong className={wantAllocationAmount - wantsTotal >= 0 ? styles.good : styles.warn}>
+                      {currency.format(wantAllocationAmount - wantsTotal)}
                     </strong>
                   </div>
                 </div>
@@ -2039,9 +2063,9 @@ export default function Home() {
                     const stackCost = state.wants
                       .slice(0, index + 1)
                       .reduce((sum, stackedWant) => sum + stackedWant.price, 0);
-                    const stackRemaining = guiltFreeSpendingAllocation - stackCost;
+                    const stackRemaining = wantAllocationAmount - stackCost;
                     const isSafe = stackRemaining >= 0;
-                    const progress = Math.min((stackCost / Math.max(guiltFreeSpendingAllocation, 1)) * 100, 100);
+                    const progress = Math.min((stackCost / Math.max(wantAllocationAmount, 1)) * 100, 100);
 
                     return (
                       <div className={styles.purchaseCard} key={want.id}>
@@ -2112,7 +2136,7 @@ export default function Home() {
                             <strong>{currency.format(stackCost)}</strong>
                           </div>
                           <div>
-                            <span>Guilt-Free left</span>
+                            <span>{wantAllocationCategory?.name ?? "Allocation"} left</span>
                             <strong className={isSafe ? styles.good : styles.warn}>
                               {currency.format(stackRemaining)}
                             </strong>
