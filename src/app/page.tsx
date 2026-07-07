@@ -84,7 +84,7 @@ type LifeOSState = {
 type ActiveTab = "overview" | "budget" | "travel";
 type BudgetTab = "allocations" | "obligations" | "buy-list";
 type SyncState = {
-  status: "Local only" | "Connecting" | "Synced" | "Saving" | "Error";
+  status: "Local only" | "Connecting" | "Synced" | "Saving" | "Setup needed" | "Error";
   detail: string;
 };
 
@@ -281,6 +281,23 @@ function syncStateFromDetail(status: SyncState["status"], detail: string): SyncS
   return { status, detail };
 }
 
+function getSupabaseSyncError(error: unknown): SyncState {
+  const message = error instanceof Error ? error.message : "Supabase sync failed";
+
+  if (message.toLowerCase().includes("anonymous sign-ins are disabled")) {
+    return syncStateFromDetail(
+      "Setup needed",
+      "Enable Anonymous sign-ins in Supabase Authentication providers.",
+    );
+  }
+
+  if (message.toLowerCase().includes("lifeos_states")) {
+    return syncStateFromDetail("Setup needed", "Run supabase/schema.sql in the Supabase SQL editor.");
+  }
+
+  return syncStateFromDetail("Error", message);
+}
+
 export default function Home() {
   const state = useSyncExternalStore(subscribeToLifeOSState, readLifeOSState, () => defaultState);
   const [activeTab, setActiveTab] = useState<ActiveTab>("overview");
@@ -289,6 +306,7 @@ export default function Home() {
   const [syncState, setSyncState] = useState<SyncState>(() =>
     syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"),
   );
+  const [isScrolled, setIsScrolled] = useState(false);
   const cloudUserIdRef = useRef<string | null>(null);
   const cloudReadyRef = useRef(false);
   const [now, setNow] = useState(() => new Date());
@@ -316,6 +334,17 @@ export default function Home() {
     const timer = window.setInterval(() => setNow(new Date()), 60000);
 
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    function updateScrolledState() {
+      setIsScrolled(window.scrollY > 90);
+    }
+
+    updateScrolledState();
+    window.addEventListener("scroll", updateScrolledState, { passive: true });
+
+    return () => window.removeEventListener("scroll", updateScrolledState);
   }, []);
 
   useEffect(() => {
@@ -397,12 +426,7 @@ export default function Home() {
         cloudReadyRef.current = false;
 
         if (!cancelled) {
-          setSyncState(
-            syncStateFromDetail(
-              "Error",
-              error instanceof Error ? error.message : "Supabase sync failed",
-            ),
-          );
+          setSyncState(getSupabaseSyncError(error));
         }
       }
     }
@@ -435,7 +459,7 @@ export default function Home() {
 
       setSyncState(
         error
-          ? syncStateFromDetail("Error", error.message)
+          ? getSupabaseSyncError(error)
           : syncStateFromDetail("Synced", "Supabase cloud sync is active"),
       );
     }, 900);
@@ -725,7 +749,7 @@ export default function Home() {
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
-        <header className={styles.topbar}>
+        <header className={[styles.topbar, isScrolled ? styles.compactTopbar : ""].join(" ")}>
           <div className={styles.brand}>
             <div className={styles.logoMark} aria-hidden="true">
               <span>LO</span>
@@ -733,7 +757,16 @@ export default function Home() {
             <div>
               <strong>LifeOS</strong>
               <span>Money, trips, goals</span>
-              <small className={styles.syncBadge} title={syncState.detail}>
+              <small
+                className={[
+                  styles.syncBadge,
+                  syncState.status === "Synced" ? styles.syncBadgeSynced : "",
+                  syncState.status === "Setup needed" || syncState.status === "Error"
+                    ? styles.syncBadgeError
+                    : "",
+                ].join(" ")}
+                title={syncState.detail}
+              >
                 <Database size={12} aria-hidden="true" />
                 {syncState.status}
               </small>
