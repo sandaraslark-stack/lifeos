@@ -12,7 +12,7 @@
 .shell {
   width: min(1440px, 100%);
   margin: 0 auto;
-  padding: 22px;
+  padding: 142px 22px 22px;
 }
 
 .topbar,
@@ -45,38 +45,24 @@
 }
 
 .topbar {
-  position: sticky;
+  position: fixed;
   top: 14px;
+  left: 50%;
   z-index: 50;
   display: flex;
   justify-content: space-between;
   gap: 18px;
   align-items: center;
+  width: min(calc(100% - 44px), 1396px);
   padding: 12px;
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(22px);
+  transform: translateX(-50%);
 }
 
 .compactTopbar {
-  justify-content: flex-end;
-  width: fit-content;
-  margin-left: auto;
-  border-radius: 999px;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.compactTopbar .brand {
-  width: 0;
-  min-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.compactTopbar .authPanel,
-.compactTopbar .accountPanel {
-  display: none;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.92);
 }
 
 .compactTopbar .tabs button {
@@ -1944,11 +1930,12 @@
 
 @media (max-width: 760px) {
   .shell {
-    padding: 14px;
+    padding: 246px 14px 14px;
   }
 
   .topbar {
     top: 8px;
+    width: calc(100% - 28px);
     align-items: stretch;
     flex-direction: column;
   }
