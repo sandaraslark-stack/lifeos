@@ -1,0 +1,17 @@
+{
+  "name": "LifeOS",
+  "short_name": "LifeOS",
+  "description": "Money, trips, goals, and food planning.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#e0f2fe",
+  "theme_color": "#38bdf8",
+  "icons": [
+    {
+      "src": "/lifeos-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -194,12 +194,27 @@
   height: 48px;
   border-radius: 15px;
   background:
-    linear-gradient(135deg, #38bdf8 0 48%, #a7f3d0 48% 64%, #60a5fa 64%),
+    linear-gradient(135deg, #38bdf8 0 48%, #a7f3d0 48% 64%, #2563eb 64%),
     #38bdf8;
+  overflow: hidden;
   color: #0f2742;
   font-weight: 950;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 14px 30px rgba(56, 189, 248, 0.32);
   animation: logoLift 4.8s ease-in-out infinite;
+}
+
+.logoMark::before {
+  position: absolute;
+  left: 13px;
+  bottom: 13px;
+  width: 23px;
+  height: 15px;
+  border: 4px solid rgba(255, 255, 255, 0.92);
+  border-top: 0;
+  border-right: 0;
+  border-radius: 0 0 0 16px;
+  content: "";
+  transform: rotate(-31deg);
 }
 
 .logoMark::after {
@@ -215,8 +230,13 @@
 }
 
 .logoMark span {
-  font-size: 14px;
-  letter-spacing: 0;
+  position: absolute;
+  top: 14px;
+  right: 11px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(15, 39, 66, 0.18);
 }
 
 .tabs,

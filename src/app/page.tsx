@@ -1157,7 +1157,7 @@ export default function Home() {
         <header className={styles.topbar}>
           <div className={styles.brand}>
             <div className={styles.logoMark} aria-hidden="true">
-              <span>LO</span>
+              <span />
             </div>
             <div>
               <strong>LifeOS</strong>
