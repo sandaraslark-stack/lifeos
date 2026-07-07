@@ -328,6 +328,20 @@ function writeLifeOSState(nextState: LifeOSState) {
   window.dispatchEvent(new Event("lifeos-state-change"));
 }
 
+function createPhilStateSnapshot(state: LifeOSState) {
+  return {
+    ...state,
+    trips: state.trips.map((trip) => ({
+      ...trip,
+      imageUrl: trip.imageUrl
+        ? trip.imageUrl.startsWith("data:")
+          ? "Uploaded picture saved"
+          : trip.imageUrl.slice(0, 180)
+        : undefined,
+    })),
+  };
+}
+
 function syncStateFromDetail(status: SyncState["status"], detail: string): SyncState {
   return { status, detail };
 }
@@ -967,7 +981,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: userMessage.content,
-          state,
+          state: createPhilStateSnapshot(state),
           messages: philMessages.slice(-8),
         }),
       });

@@ -49,9 +49,15 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ answer: response.output_text });
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "";
+
     return NextResponse.json(
-      { error: "Phil could not reach OpenAI yet. Check your OPENAI_API_KEY and OPENAI_MODEL settings." },
+      {
+        error: detail
+          ? `Phil could not reach OpenAI yet: ${detail}`
+          : "Phil could not reach OpenAI yet. Check your OPENAI_API_KEY and OPENAI_MODEL settings.",
+      },
       { status: 502 },
     );
   }
