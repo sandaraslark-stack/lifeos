@@ -815,7 +815,7 @@ export default function Home() {
   return (
     <main className={styles.page}>
       <section className={styles.shell}>
-        <header className={[styles.topbar, isScrolled ? styles.compactTopbar : ""].join(" ")}>
+        <header className={styles.topbar}>
           <div className={styles.brand}>
             <div className={styles.logoMark} aria-hidden="true">
               <span>LO</span>
@@ -905,6 +905,36 @@ export default function Home() {
             </button>
           </nav>
         </header>
+
+        <nav
+          className={[styles.floatingTabs, isScrolled ? styles.floatingTabsVisible : ""].join(" ")}
+          aria-label="Sticky LifeOS sections"
+        >
+          <button
+            className={activeTab === "overview" ? styles.activeTab : ""}
+            type="button"
+            onClick={() => setActiveTab("overview")}
+          >
+            <LayoutDashboard size={17} aria-hidden="true" />
+            Overview
+          </button>
+          <button
+            className={activeTab === "budget" ? styles.activeTab : ""}
+            type="button"
+            onClick={() => setActiveTab("budget")}
+          >
+            <Coins size={17} aria-hidden="true" />
+            Budget
+          </button>
+          <button
+            className={activeTab === "travel" ? styles.activeTab : ""}
+            type="button"
+            onClick={() => setActiveTab("travel")}
+          >
+            <Compass size={17} aria-hidden="true" />
+            Travel
+          </button>
+        </nav>
 
         <section className={styles.hero}>
           <div className={styles.heroCopy}>
