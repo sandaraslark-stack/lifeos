@@ -17,8 +17,12 @@ export const metadata: Metadata = {
   description: "Stash-first budgeting and travel planning.",
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    apple: [{ url: "/apple-icon.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/lifeos-icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/lifeos-icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/lifeos-icon-192.png", sizes: "192x192", type: "image/png" }],
   },
 };
 
