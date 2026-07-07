@@ -342,6 +342,44 @@ function createPhilStateSnapshot(state: LifeOSState) {
   };
 }
 
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function searchScore(search: string, meal: MealCatalogItem) {
+  if (!search) {
+    return 1;
+  }
+
+  const name = normalizeSearchText(meal.name);
+  const notes = normalizeSearchText(meal.notes);
+  const words = search.split(" ").filter(Boolean);
+
+  if (name === search) {
+    return 100;
+  }
+
+  if (name.startsWith(search)) {
+    return 90;
+  }
+
+  if (name.split(" ").some((word) => word.startsWith(search))) {
+    return 78;
+  }
+
+  if (name.includes(search)) {
+    return 68;
+  }
+
+  const wordMatches = words.filter((word) => name.includes(word) || notes.includes(word)).length;
+
+  if (wordMatches) {
+    return 45 + wordMatches * 8;
+  }
+
+  return 0;
+}
+
 function syncStateFromDetail(status: SyncState["status"], detail: string): SyncState {
   return { status, detail };
 }
@@ -718,18 +756,21 @@ export default function Home() {
   );
 
   const filteredMealCatalog = useMemo(() => {
-    const search = mealSearch.trim().toLowerCase();
+    const search = normalizeSearchText(mealSearch);
 
     return state.mealCatalog
-      .filter((meal) => {
-        if (!search) {
-          return true;
-        }
-
-        return `${meal.name} ${meal.notes}`.toLowerCase().includes(search);
-      })
-      .toSorted((a, b) => a.name.localeCompare(b.name));
+      .map((meal) => ({ meal, score: searchScore(search, meal) }))
+      .filter(({ score }) => score > 0)
+      .toSorted((a, b) => b.score - a.score || a.meal.name.localeCompare(b.meal.name))
+      .map(({ meal }) => meal);
   }, [mealSearch, state.mealCatalog]);
+
+  const smartMealSuggestions = filteredMealCatalog.slice(0, 5);
+  const canAddMealSearch =
+    Boolean(mealSearch.trim()) &&
+    !state.mealCatalog.some(
+      (meal) => normalizeSearchText(meal.name) === normalizeSearchText(mealSearch),
+    );
 
   const calendarDays = useMemo(() => {
     const year = activeMonth.getFullYear();
@@ -878,12 +919,49 @@ export default function Home() {
     setMealDraft({ food: "", notes: "" });
   }
 
-  function applyMealFromCatalog(meal: MealCatalogItem) {
+  function applyMealToDraft(name: string, notes = "") {
     setMealDraft({
-      food: meal.name,
-      notes: meal.notes,
+      food: name,
+      notes,
     });
-    setMealSearch(meal.name);
+    setMealSearch(name);
+  }
+
+  function applyMealFromCatalog(meal: MealCatalogItem) {
+    applyMealToDraft(meal.name, meal.notes);
+  }
+
+  function addSearchMealToCatalog() {
+    const name = mealSearch.trim();
+
+    if (!name) {
+      return;
+    }
+
+    setState((current) => {
+      const existing = current.mealCatalog.find((meal) => normalizeSearchText(meal.name) === normalizeSearchText(name));
+
+      if (existing) {
+        return current;
+      }
+
+      return {
+        ...current,
+        mealCatalog: [
+          ...current.mealCatalog,
+          {
+            id: createId("meal-catalog"),
+            name,
+            notes: "",
+          },
+        ],
+      };
+    });
+    applyMealToDraft(name);
+  }
+
+  function clearMealSearch() {
+    setMealSearch("");
   }
 
   function addMealToCatalog() {
@@ -2348,8 +2426,34 @@ export default function Home() {
                       onChange={(event) => setMealSearch(event.target.value)}
                       placeholder="Search adobo, pasta, brunch..."
                     />
+                    {mealSearch ? (
+                      <button type="button" onClick={clearMealSearch} title="Clear search">
+                        <X size={15} aria-hidden="true" />
+                      </button>
+                    ) : null}
                   </div>
                 </label>
+
+                {mealSearch.trim() ? (
+                  <div className={styles.smartMealSuggestions}>
+                    {smartMealSuggestions.length ? (
+                      smartMealSuggestions.map((meal) => (
+                        <button type="button" key={meal.id} onClick={() => applyMealFromCatalog(meal)}>
+                          <strong>{meal.name}</strong>
+                          <span>{meal.notes || "Use this meal"}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p>No saved meal yet for {mealSearch.trim()}.</p>
+                    )}
+                    {canAddMealSearch ? (
+                      <button className={styles.addSearchMealButton} type="button" onClick={addSearchMealToCatalog}>
+                        <Plus size={15} aria-hidden="true" />
+                        Add {mealSearch.trim()} and use it
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {selectedMealSlot ? (
                   <div className={styles.mealEditorForm}>
@@ -2408,7 +2512,7 @@ export default function Home() {
                         <button
                           type="button"
                           key={food}
-                          onClick={() => setMealDraft((current) => ({ ...current, food }))}
+                          onClick={() => applyMealToDraft(food)}
                         >
                           {food}
                         </button>

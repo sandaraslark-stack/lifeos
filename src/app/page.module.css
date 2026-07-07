@@ -1862,7 +1862,7 @@
 
 .mealSearchBox div {
   display: grid;
-  grid-template-columns: 36px 1fr;
+  grid-template-columns: 36px 1fr 36px;
   align-items: center;
   border: 1px solid #bfdbfe;
   border-radius: 15px;
@@ -1873,6 +1873,18 @@
 .mealSearchBox svg {
   justify-self: center;
   color: #0284c7;
+}
+
+.mealSearchBox button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0284c7;
+  cursor: pointer;
 }
 
 .mealSearchBox input {
@@ -1886,6 +1898,64 @@
   font-weight: 850;
   outline: none;
   padding-right: 12px;
+}
+
+.smartMealSuggestions {
+  display: grid;
+  gap: 8px;
+  margin-top: -6px;
+}
+
+.smartMealSuggestions button,
+.smartMealSuggestions p {
+  width: 100%;
+  margin: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #244761;
+  padding: 10px 11px;
+}
+
+.smartMealSuggestions button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.smartMealSuggestions button:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 10px 22px rgba(56, 189, 248, 0.14);
+}
+
+.smartMealSuggestions strong {
+  color: #102033;
+  font-size: 13px;
+}
+
+.smartMealSuggestions span,
+.smartMealSuggestions p {
+  overflow: hidden;
+  color: #557086;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smartMealSuggestions .addSearchMealButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-color: rgba(14, 165, 233, 0.32);
+  background: linear-gradient(135deg, #e0f2fe, #ffffff);
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 950;
+  text-align: center;
 }
 
 .mealEditorForm input,
