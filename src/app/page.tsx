@@ -822,6 +822,7 @@ export default function Home() {
     minute: "2-digit",
     timeZoneName: "short",
   }).format(now);
+  const todayDate = dateInputValue(now);
 
   const nextTrip = state.trips
     .toSorted((a, b) => compareDateStrings(a.startDate, b.startDate))
@@ -2607,9 +2608,14 @@ export default function Home() {
 
                     const brunch = getMeal(date, "brunch");
                     const dinner = getMeal(date, "dinner");
+                    const isToday = date === todayDate;
 
                     return (
-                      <div className={styles.foodDay} key={date}>
+                      <div
+                        className={[styles.foodDay, isToday ? styles.todayFoodDay : ""].join(" ")}
+                        key={date}
+                        aria-current={isToday ? "date" : undefined}
+                      >
                         <strong>{parseLocalDate(date).getDate()}</strong>
                         <button
                           className={brunch ? styles.mealFilled : ""}
