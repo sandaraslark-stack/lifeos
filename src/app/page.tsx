@@ -6,6 +6,8 @@ import {
   Banknote,
   Bot,
   CalendarDays,
+  Check,
+  CheckCircle2,
   ChefHat,
   ChevronDown,
   ChevronLeft,
@@ -13,10 +15,12 @@ import {
   ChevronUp,
   Coins,
   Compass,
-  Crown,
   Database,
   Gamepad2,
+  House,
+  ImagePlus,
   LayoutDashboard,
+  ExternalLink,
   MapPin,
   PiggyBank,
   Plane,
@@ -30,7 +34,6 @@ import {
   TrendingUp,
   Trash2,
   Utensils,
-  WalletCards,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -92,17 +95,34 @@ type MealCatalogItem = {
   notes: string;
 };
 
-type StashHistoryEntry = {
+type IncomeEntry = {
   id: string;
   month: string;
   amount: number;
+  source: string;
+  notes: string;
   recordedAt: string;
 };
 
+type EmergencyFund = {
+  balance: number;
+  monthlyEssentials: number;
+  targetMonths: number;
+};
+
+type MoveOutItem = {
+  id: string;
+  name: string;
+  estimatedCost: number;
+  completed: boolean;
+  productUrl?: string;
+  imageUrl?: string;
+};
+
 type LifeOSState = {
-  stash: number;
-  stashHistory: StashHistoryEntry[];
-  buyingPowerPercent: number;
+  incomeHistory: IncomeEntry[];
+  emergencyFund: EmergencyFund;
+  moveOutItems: MoveOutItem[];
   categories: Category[];
   obligations: Obligation[];
   trips: Trip[];
@@ -112,9 +132,9 @@ type LifeOSState = {
   mealCatalog: MealCatalogItem[];
 };
 
-type ActiveTab = "overview" | "budget" | "travel" | "food";
+type ActiveTab = "overview" | "budget" | "readiness" | "travel" | "food";
 type BudgetTab = "allocations" | "obligations" | "wants";
-type OverviewTab = "main" | "stash-trend";
+type OverviewTab = "main" | "income-trend";
 type PhilMessage = {
   id: string;
   role: "user" | "assistant";
@@ -127,9 +147,18 @@ type SyncState = {
 type AuthMode = "sign-in" | "sign-up";
 
 const defaultState: LifeOSState = {
-  stash: 250000,
-  stashHistory: [],
-  buyingPowerPercent: 25,
+  incomeHistory: [],
+  emergencyFund: {
+    balance: 0,
+    monthlyEssentials: 45000,
+    targetMonths: 6,
+  },
+  moveOutItems: [
+    { id: "rent-advance", name: "3 months rent advance", estimatedCost: 84000, completed: false },
+    { id: "refrigerator", name: "Refrigerator", estimatedCost: 18000, completed: false },
+    { id: "bed", name: "Bed and mattress", estimatedCost: 16000, completed: false },
+    { id: "cooking", name: "Cooking essentials", estimatedCost: 8000, completed: false },
+  ],
   categories: [
     { id: "wealth", name: "Wealth Building", percent: 35, destination: "Brokerage / Investments" },
     { id: "protection", name: "Protection", percent: 15, destination: "Emergency Fund" },
@@ -287,11 +316,29 @@ function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.round(Math.random() * 1000)}`;
 }
 
-function normalizeLifeOSState(state: Partial<LifeOSState> & { purchaseGoals?: Want[] }): LifeOSState {
+function safeExternalUrl(value?: string) {
+  if (!value) return undefined;
+
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeLifeOSState(
+  state: Partial<LifeOSState> & {
+    purchaseGoals?: Want[];
+    stash?: number;
+    stashHistory?: Array<{ id: string; month: string; amount: number; recordedAt: string }>;
+    buyingPowerPercent?: number;
+  },
+): LifeOSState {
   return {
-    ...defaultState,
-    ...state,
-    stashHistory: state.stashHistory ?? defaultState.stashHistory,
+    incomeHistory: state.incomeHistory ?? defaultState.incomeHistory,
+    emergencyFund: { ...defaultState.emergencyFund, ...state.emergencyFund },
+    moveOutItems: state.moveOutItems ?? defaultState.moveOutItems,
     categories: state.categories ?? defaultState.categories,
     obligations: state.obligations ?? defaultState.obligations,
     trips: state.trips ?? defaultState.trips,
@@ -424,7 +471,13 @@ export default function Home() {
   const [activeOverviewTab, setActiveOverviewTab] = useState<OverviewTab>("main");
   const [activeBudgetTab, setActiveBudgetTab] = useState<BudgetTab>("allocations");
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>("wealth");
-  const [stashDraft, setStashDraft] = useState(() => String(readLifeOSState().stash));
+  const [incomeDraft, setIncomeDraft] = useState({ amount: "", source: "Primary income", notes: "" });
+  const [moveOutDraft, setMoveOutDraft] = useState({
+    name: "",
+    estimatedCost: "",
+    productUrl: "",
+    imageUrl: "",
+  });
   const [syncState, setSyncState] = useState<SyncState>(() =>
     syncStateFromDetail("Local only", "Add Supabase env vars to enable cloud sync"),
   );
@@ -461,7 +514,7 @@ export default function Home() {
     {
       id: "phil-welcome",
       role: "assistant",
-      content: "I am Phil, your LifeOS advisor. Ask me anything about your stash, bills, trips, food, or wants.",
+      content: "I am Phil, your LifeOS advisor. Ask me anything about your income, emergency fund, move-out plan, bills, trips, food, or wants.",
     },
   ]);
   const [draftTrip, setDraftTrip] = useState({
@@ -480,33 +533,70 @@ export default function Home() {
     writeLifeOSState(typeof updater === "function" ? updater(current) : updater);
   }
 
-  function saveMonthlyStash() {
-    const amount = Number(stashDraft);
+  function saveMonthlyIncome() {
+    const amount = Number(incomeDraft.amount);
     const currentMonth = monthInputValue(new Date());
 
-    if (!Number.isFinite(amount) || amount < 0) {
+    if (!Number.isFinite(amount) || amount <= 0 || !incomeDraft.source.trim()) {
       return;
     }
 
     setState((current) => {
-      if (current.stashHistory.some((entry) => entry.month === currentMonth)) {
+      if (current.incomeHistory.some((entry) => entry.month === currentMonth)) {
         return current;
       }
 
       return {
         ...current,
-        stash: amount,
-        stashHistory: [
-          ...current.stashHistory,
+        incomeHistory: [
+          ...current.incomeHistory,
           {
-            id: createId("stash-history"),
+            id: createId("income"),
             month: currentMonth,
             amount,
+            source: incomeDraft.source.trim(),
+            notes: incomeDraft.notes.trim(),
             recordedAt: new Date().toISOString(),
           },
         ],
       };
     });
+  }
+
+  function addMoveOutItem() {
+    if (!moveOutDraft.name.trim()) {
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      moveOutItems: [
+        ...current.moveOutItems,
+        {
+          id: createId("moveout"),
+          name: moveOutDraft.name.trim(),
+          estimatedCost: Math.max(0, Number(moveOutDraft.estimatedCost) || 0),
+          completed: false,
+          productUrl: moveOutDraft.productUrl.trim() || undefined,
+          imageUrl: moveOutDraft.imageUrl.trim() || undefined,
+        },
+      ],
+    }));
+    setMoveOutDraft({ name: "", estimatedCost: "", productUrl: "", imageUrl: "" });
+  }
+
+  function updateMoveOutItem(id: string, patch: Partial<MoveOutItem>) {
+    setState((current) => ({
+      ...current,
+      moveOutItems: current.moveOutItems.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    }));
+  }
+
+  function deleteMoveOutItem(id: string) {
+    setState((current) => ({
+      ...current,
+      moveOutItems: current.moveOutItems.filter((item) => item.id !== id),
+    }));
   }
 
   async function loadCloudState(userId: string) {
@@ -725,28 +815,34 @@ export default function Home() {
   }, [state]);
 
   const currentMonthKey = monthInputValue(now);
-  const stashHistory = state.stashHistory.toSorted((a, b) => a.month.localeCompare(b.month));
-  const currentMonthStashEntry = stashHistory.find((entry) => entry.month === currentMonthKey);
-  const latestStashEntry = stashHistory.at(-1);
-  const previousStashEntry = stashHistory.at(-2);
-  const latestStashAmount = latestStashEntry?.amount ?? state.stash;
-  const previousStashAmount = previousStashEntry?.amount ?? latestStashAmount;
-  const stashDelta = latestStashEntry && previousStashEntry ? latestStashAmount - previousStashAmount : 0;
-  const stashTrend =
-    stashHistory.length < 2 ? "Not enough data" : stashDelta > 0 ? "Getting higher" : stashDelta < 0 ? "Getting lower" : "Flat";
-  const stashTrendTone = stashDelta > 0 ? "good" : stashDelta < 0 ? "warn" : "steady";
-  const stashChanges = stashHistory.slice(1).map((entry, index) => entry.amount - stashHistory[index].amount);
-  const averageStashChange =
-    stashChanges.length > 0
-      ? stashChanges.reduce((sum, change) => sum + change, 0) / stashChanges.length
+  const incomeHistory = state.incomeHistory.toSorted((a, b) => a.month.localeCompare(b.month));
+  const currentMonthIncomeEntry = incomeHistory.find((entry) => entry.month === currentMonthKey);
+  const latestIncomeEntry = incomeHistory.at(-1);
+  const previousIncomeEntry = incomeHistory.at(-2);
+  const monthlyIncome = currentMonthIncomeEntry?.amount ?? latestIncomeEntry?.amount ?? 0;
+  const previousIncome = previousIncomeEntry?.amount ?? monthlyIncome;
+  const incomeDelta = latestIncomeEntry && previousIncomeEntry ? latestIncomeEntry.amount - previousIncome : 0;
+  const incomeTrend =
+    incomeHistory.length < 2 ? "Building your baseline" : incomeDelta > 0 ? "Income is growing" : incomeDelta < 0 ? "Income moved lower" : "Income is steady";
+  const incomeTrendTone = incomeDelta > 0 ? "good" : incomeDelta < 0 ? "warn" : "steady";
+  const incomeChanges = incomeHistory.slice(1).map((entry, index) => entry.amount - incomeHistory[index].amount);
+  const averageIncomeChange =
+    incomeChanges.length > 0
+      ? incomeChanges.reduce((sum, change) => sum + change, 0) / incomeChanges.length
       : 0;
-  const stashHigh = stashHistory.length ? Math.max(...stashHistory.map((entry) => entry.amount)) : state.stash;
-  const stashLow = stashHistory.length ? Math.min(...stashHistory.map((entry) => entry.amount)) : state.stash;
-  const stashRange = Math.max(stashHigh - stashLow, 1);
-  const recentStashHistory = stashHistory.slice(-6);
-  const canSaveMonthlyStash = !currentMonthStashEntry && Number(stashDraft) >= 0;
+  const incomeHigh = incomeHistory.length ? Math.max(...incomeHistory.map((entry) => entry.amount)) : 0;
+  const incomeLow = incomeHistory.length ? Math.min(...incomeHistory.map((entry) => entry.amount)) : 0;
+  const incomeRange = Math.max(incomeHigh - incomeLow, 1);
+  const recentIncomeHistory = incomeHistory.slice(-12);
+  const incomeCurvePoints = recentIncomeHistory
+    .map((entry, index) => {
+      const x = recentIncomeHistory.length === 1 ? 500 : 36 + (index / (recentIncomeHistory.length - 1)) * 928;
+      const y = 244 - ((entry.amount - incomeLow) / incomeRange) * 196;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const canSaveMonthlyIncome = !currentMonthIncomeEntry && Number(incomeDraft.amount) > 0 && Boolean(incomeDraft.source.trim());
 
-  const buyingPower = state.stash * (state.buyingPowerPercent / 100);
   const categoryTotal = state.categories.reduce((sum, category) => sum + category.percent, 0);
   const monthlyCategory = state.categories.find((category) => category.id === "monthly");
   const wantAllocationCategory =
@@ -755,42 +851,23 @@ export default function Home() {
       (category) => category.id === "spending" || category.name.toLowerCase() === "guilt-free spending",
     ) ??
     state.categories[0];
-  const monthlyEnvelope = buyingPower * ((monthlyCategory?.percent ?? 0) / 100);
-  const wantAllocationAmount = buyingPower * ((wantAllocationCategory?.percent ?? 0) / 100);
+  const monthlyEnvelope = monthlyIncome * ((monthlyCategory?.percent ?? 0) / 100);
+  const wantAllocationAmount = monthlyIncome * ((wantAllocationCategory?.percent ?? 0) / 100);
   const wantsTotal = state.wants.reduce((sum, want) => sum + want.price, 0);
 
   const monthlyDue = state.obligations.reduce((sum, obligation) => {
     const remaining = remainingMonths(obligation);
     return sum + (obligation.kind === "fixed" || remaining > 0 ? obligation.amount : 0);
   }, 0);
-  const protectedCash = state.stash - buyingPower;
   const monthlyRemaining = monthlyEnvelope - monthlyDue;
-  const protectedRatio = protectedCash / Math.max(state.stash, 1);
-  const runwayRatio =
-    monthlyEnvelope > 0
-      ? Math.max(-1, Math.min(monthlyRemaining / monthlyEnvelope, 1))
-      : monthlyRemaining >= 0
-        ? 1
-        : -1;
-  const powerScore = Math.round(
-    Math.min(state.stash / 250000, 1) * 30 +
-      Math.max(0, Math.min(protectedRatio, 1)) * 35 +
-      Math.max(0, (runwayRatio + 1) / 2) * 35,
-  );
-  const powerLevels = [
-    { min: 0, name: "Spark", tone: "Cautious" },
-    { min: 25, name: "Steady", tone: "Building" },
-    { min: 45, name: "Builder", tone: "Stable" },
-    { min: 65, name: "Flex", tone: "Ready" },
-    { min: 82, name: "Boss", tone: "Premium" },
-  ];
-  const powerLevelIndex = powerLevels.findLastIndex((level) => powerScore >= level.min);
-  const powerLevel = powerLevels[Math.max(powerLevelIndex, 0)];
-  const nextPowerLevel = powerLevels[Math.min(powerLevelIndex + 1, powerLevels.length - 1)];
-  const powerLevelProgress =
-    powerLevel.name === nextPowerLevel.name
-      ? 100
-      : Math.round(((powerScore - powerLevel.min) / (nextPowerLevel.min - powerLevel.min)) * 100);
+  const emergencyTarget = state.emergencyFund.monthlyEssentials * state.emergencyFund.targetMonths;
+  const emergencyProgress = Math.min((state.emergencyFund.balance / Math.max(emergencyTarget, 1)) * 100, 100);
+  const emergencyMonthsCovered = state.emergencyFund.balance / Math.max(state.emergencyFund.monthlyEssentials, 1);
+  const completedMoveOutItems = state.moveOutItems.filter((item) => item.completed).length;
+  const moveOutTotal = state.moveOutItems.reduce((sum, item) => sum + item.estimatedCost, 0);
+  const moveOutReadyTotal = state.moveOutItems
+    .filter((item) => item.completed)
+    .reduce((sum, item) => sum + item.estimatedCost, 0);
   const fixedObligations = state.obligations
     .filter((obligation) => obligation.kind === "fixed")
     .reduce((sum, obligation) => sum + obligation.amount, 0);
@@ -1421,6 +1498,14 @@ export default function Home() {
               Budget
             </button>
             <button
+              className={activeTab === "readiness" ? styles.activeTab : ""}
+              type="button"
+              onClick={() => setActiveTab("readiness")}
+            >
+              <House size={17} aria-hidden="true" />
+              Readiness
+            </button>
+            <button
               className={activeTab === "travel" ? styles.activeTab : ""}
               type="button"
               onClick={() => setActiveTab("travel")}
@@ -1460,6 +1545,14 @@ export default function Home() {
             Budget
           </button>
           <button
+            className={activeTab === "readiness" ? styles.activeTab : ""}
+            type="button"
+            onClick={() => setActiveTab("readiness")}
+          >
+            <House size={17} aria-hidden="true" />
+            Readiness
+          </button>
+          <button
             className={activeTab === "travel" ? styles.activeTab : ""}
             type="button"
             onClick={() => setActiveTab("travel")}
@@ -1488,12 +1581,12 @@ export default function Home() {
               Main
             </button>
             <button
-              className={activeOverviewTab === "stash-trend" ? styles.activeOverviewTab : ""}
+              className={activeOverviewTab === "income-trend" ? styles.activeOverviewTab : ""}
               type="button"
-              onClick={() => setActiveOverviewTab("stash-trend")}
+              onClick={() => setActiveOverviewTab("income-trend")}
             >
               <TrendingUp size={16} aria-hidden="true" />
-              Stash Trend
+              Income Curve
             </button>
           </nav>
 
@@ -1506,27 +1599,14 @@ export default function Home() {
                 </p>
                 <h1>{liveMonth} money cockpit</h1>
                 <p className={styles.heroSubcopy}>
-                  Live view of stash health, monthly power, protected cash, and bills pressure.
+                  One truthful income record per month, locked after saving for a clean financial history.
                 </p>
-                <div className={styles.powerLevelCard}>
-                  <div className={styles.powerOrb}>
-                    <Crown size={24} aria-hidden="true" />
-                    <strong>LVL {powerLevelIndex + 1}</strong>
-                  </div>
-                  <div className={styles.powerLevelBody}>
-                    <div>
-                      <span>Buying Power Level</span>
-                      <strong>{powerLevel.name}</strong>
-                      <small>{powerLevel.tone} mode</small>
-                    </div>
-                    <div className={styles.powerMeter}>
-                      <i style={{ width: `${Math.max(0, Math.min(powerLevelProgress, 100))}%` }} />
-                    </div>
-                    <div className={styles.powerStats}>
-                      <span>Stash {Math.round(Math.min(state.stash / 250000, 1) * 100)}%</span>
-                      <span>Protected {Math.round(protectedRatio * 100)}%</span>
-                      <span>Runway {monthlyRemaining >= 0 ? "Clear" : "Tight"}</span>
-                    </div>
+                <div className={styles.incomeIntegrityCard}>
+                  <ShieldCheck size={24} aria-hidden="true" />
+                  <div>
+                    <span>Monthly integrity rule</span>
+                    <strong>{currentMonthIncomeEntry ? "Income locked" : "Ready for your entry"}</strong>
+                    <small>{formatMonthLabel(currentMonthKey)} · one save only</small>
                   </div>
                 </div>
               </div>
@@ -1536,64 +1616,64 @@ export default function Home() {
                   <Sparkles size={15} aria-hidden="true" />
                   Updated {liveTime}
                 </div>
-                <div className={styles.analyticsControls}>
+                <div className={styles.incomeEntryForm}>
                   <label>
-                    <span>Total stash</span>
+                    <span>Income received</span>
                     <input
                       type="number"
-                      min="0"
-                      value={stashDraft}
-                      disabled={Boolean(currentMonthStashEntry)}
-                      onChange={(event) => setStashDraft(event.target.value)}
+                      min="1"
+                      placeholder="₱0"
+                      value={currentMonthIncomeEntry?.amount ?? incomeDraft.amount}
+                      disabled={Boolean(currentMonthIncomeEntry)}
+                      onChange={(event) => setIncomeDraft((current) => ({ ...current, amount: event.target.value }))}
                     />
-                    <button
-                      className={styles.monthlyStashButton}
-                      type="button"
-                      disabled={!canSaveMonthlyStash}
-                      onClick={saveMonthlyStash}
-                    >
-                      {currentMonthStashEntry ? "Recorded this month" : "Save monthly stash"}
-                    </button>
                   </label>
                   <label>
-                    <span>Monthly power rate</span>
-                    <div className={styles.controlSlider}>
-                      <strong>{state.buyingPowerPercent}%</strong>
-                      <input
-                        type="range"
-                        min="5"
-                        max="60"
-                        step="1"
-                        value={state.buyingPowerPercent}
-                        onChange={(event) =>
-                          setState((current) => ({
-                            ...current,
-                            buyingPowerPercent: Number(event.target.value),
-                          }))
-                        }
-                      />
-                    </div>
+                    <span>Income source</span>
+                    <input
+                      value={currentMonthIncomeEntry?.source ?? incomeDraft.source}
+                      disabled={Boolean(currentMonthIncomeEntry)}
+                      onChange={(event) => setIncomeDraft((current) => ({ ...current, source: event.target.value }))}
+                    />
                   </label>
+                  <label className={styles.incomeNotesField}>
+                    <span>Note (optional)</span>
+                    <input
+                      placeholder="Salary, client payout, business draw…"
+                      value={currentMonthIncomeEntry?.notes ?? incomeDraft.notes}
+                      disabled={Boolean(currentMonthIncomeEntry)}
+                      onChange={(event) => setIncomeDraft((current) => ({ ...current, notes: event.target.value }))}
+                    />
+                  </label>
+                  <button
+                    className={styles.monthlyStashButton}
+                    type="button"
+                    disabled={!canSaveMonthlyIncome}
+                    onClick={saveMonthlyIncome}
+                  >
+                    {currentMonthIncomeEntry ? <Check size={16} aria-hidden="true" /> : null}
+                    {currentMonthIncomeEntry ? "Recorded — locked" : `Record ${formatMonthLabel(currentMonthKey)} income`}
+                  </button>
                 </div>
                 <div className={styles.analyticsGrid}>
                   <article className={styles.analyticsPrimary}>
-                    <span>Stash</span>
-                    <strong>{currency.format(state.stash)}</strong>
+                    <span>Current monthly income</span>
+                    <strong>{currency.format(monthlyIncome)}</strong>
                     <p>
-                      {currentMonthStashEntry
+                      {currentMonthIncomeEntry
                         ? `Locked for ${formatMonthLabel(currentMonthKey)}`
                         : "Awaiting this month record"}
                     </p>
                   </article>
                   <article className={styles.analyticsPrimary}>
-                    <span>Monthly Power</span>
-                    <strong>{currency.format(buyingPower)}</strong>
-                    <p>{state.buyingPowerPercent}% released this month</p>
+                    <span>Emergency fund</span>
+                    <strong>{currency.format(state.emergencyFund.balance)}</strong>
+                    <p>{emergencyMonthsCovered.toFixed(1)} months of essentials covered</p>
                   </article>
                   <article>
-                    <ShieldCheck size={18} aria-hidden="true" />
-                    <span>Protected</span>
-                    <strong>{currency.format(protectedCash)}</strong>
+                    <House size={18} aria-hidden="true" />
+                    <span>Move-out ready</span>
+                    <strong>{completedMoveOutItems}/{state.moveOutItems.length}</strong>
                   </article>
                   <article>
                     <TrendingUp size={18} aria-hidden="true" />
@@ -1611,64 +1691,73 @@ export default function Home() {
                 <div>
                   <p className={styles.eyebrow}>
                     <Activity size={15} aria-hidden="true" />
-                    Monthly stash integrity
+                    Verified monthly income
                   </p>
-                  <h2>{stashTrend}</h2>
+                  <h2>{incomeTrend}</h2>
                   <p>
-                    {stashHistory.length < 2
+                    {incomeHistory.length < 2
                       ? "Record at least two months to unlock a reliable trend."
-                      : `Latest movement is ${currency.format(stashDelta)} from ${formatMonthLabel(
-                          previousStashEntry?.month ?? currentMonthKey,
+                      : `Latest movement is ${currency.format(incomeDelta)} from ${formatMonthLabel(
+                          previousIncomeEntry?.month ?? currentMonthKey,
                         )}.`}
                   </p>
                 </div>
-                <div className={[styles.trendSignal, styles[stashTrendTone]].join(" ")}>
-                  {stashDelta < 0 ? <TrendingDown size={24} aria-hidden="true" /> : <TrendingUp size={24} aria-hidden="true" />}
-                  <strong>{currency.format(stashDelta)}</strong>
+                <div className={[styles.trendSignal, styles[incomeTrendTone]].join(" ")}>
+                  {incomeDelta < 0 ? <TrendingDown size={24} aria-hidden="true" /> : <TrendingUp size={24} aria-hidden="true" />}
+                  <strong>{currency.format(incomeDelta)}</strong>
                   <span>latest change</span>
                 </div>
               </div>
 
               <div className={styles.stashTrendStats}>
                 <article>
-                  <span>Current stash</span>
-                  <strong>{currency.format(state.stash)}</strong>
-                  <p>{currentMonthStashEntry ? "This month is locked" : "This month can still be recorded"}</p>
+                  <span>Latest income</span>
+                  <strong>{currency.format(monthlyIncome)}</strong>
+                  <p>{currentMonthIncomeEntry ? "This month is locked" : "This month can still be recorded"}</p>
                 </article>
                 <article>
                   <span>Average change</span>
-                  <strong className={averageStashChange >= 0 ? styles.good : styles.warn}>
-                    {currency.format(averageStashChange)}
+                  <strong className={averageIncomeChange >= 0 ? styles.good : styles.warn}>
+                    {currency.format(averageIncomeChange)}
                   </strong>
                   <p>Average month-to-month move</p>
                 </article>
                 <article>
                   <span>Highest month</span>
-                  <strong>{currency.format(stashHigh)}</strong>
-                  <p>Best recorded stash</p>
+                  <strong>{currency.format(incomeHigh)}</strong>
+                  <p>Highest logged income</p>
                 </article>
                 <article>
                   <span>Lowest month</span>
-                  <strong>{currency.format(stashLow)}</strong>
-                  <p>Lowest recorded stash</p>
+                  <strong>{currency.format(incomeLow)}</strong>
+                  <p>Lowest logged income</p>
                 </article>
               </div>
 
-              <div className={styles.stashChart}>
-                {recentStashHistory.length ? (
-                  recentStashHistory.map((entry) => {
-                    const height = 18 + ((entry.amount - stashLow) / stashRange) * 82;
-
-                    return (
-                      <div key={entry.id}>
-                        <span>{currency.format(entry.amount)}</span>
-                        <i style={{ height: `${height}%` }} />
-                        <small>{formatMonthLabel(entry.month)}</small>
-                      </div>
-                    );
-                  })
+              <div className={styles.incomeCurve}>
+                {recentIncomeHistory.length ? (
+                  <>
+                    <svg viewBox="0 0 1000 280" role="img" aria-label="Monthly income curve">
+                      <defs>
+                        <linearGradient id="income-area" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.32" />
+                          <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d={`M ${incomeCurvePoints} L 964,264 L 36,264 Z`} fill="url(#income-area)" />
+                      <polyline points={incomeCurvePoints} fill="none" stroke="#0284c7" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+                      {recentIncomeHistory.map((entry, index) => {
+                        const x = recentIncomeHistory.length === 1 ? 500 : 36 + (index / (recentIncomeHistory.length - 1)) * 928;
+                        const y = 244 - ((entry.amount - incomeLow) / incomeRange) * 196;
+                        return <circle key={entry.id} cx={x} cy={y} r="10" fill="#ffffff" stroke="#0284c7" strokeWidth="6"><title>{`${formatMonthLabel(entry.month)}: ${currency.format(entry.amount)}`}</title></circle>;
+                      })}
+                    </svg>
+                    <div className={styles.incomeCurveLabels}>
+                      {recentIncomeHistory.map((entry) => <span key={entry.id}>{formatMonthLabel(entry.month)}</span>)}
+                    </div>
+                  </>
                 ) : (
-                  <p>No monthly stash records yet.</p>
+                  <p>No income records yet. Your first point appears after this month’s income is locked.</p>
                 )}
               </div>
             </section>
@@ -1679,16 +1768,16 @@ export default function Home() {
           <section className={styles.workspace}>
             <div className={styles.metricGrid}>
               <article className={styles.metricCard}>
-                <PiggyBank size={22} aria-hidden="true" />
-                <span>Stash protected</span>
-                <strong>{currency.format(protectedCash)}</strong>
-                <p>{100 - state.buyingPowerPercent}% stays out of monthly allocation.</p>
+                <Banknote size={22} aria-hidden="true" />
+                <span>Verified income</span>
+                <strong>{currency.format(monthlyIncome)}</strong>
+                <p>{currentMonthIncomeEntry ? "Locked for this month." : "Waiting for this month’s record."}</p>
               </article>
               <article className={styles.metricCard}>
-                <WalletCards size={22} aria-hidden="true" />
-                <span>Monthly power</span>
-                <strong>{currency.format(buyingPower)}</strong>
-                <p>Starting rate is intentionally conservative at {state.buyingPowerPercent}%.</p>
+                <ShieldCheck size={22} aria-hidden="true" />
+                <span>Emergency coverage</span>
+                <strong>{emergencyMonthsCovered.toFixed(1)} months</strong>
+                <p>{currency.format(state.emergencyFund.balance)} currently protected.</p>
               </article>
               <article className={styles.metricCard}>
                 <Banknote size={22} aria-hidden="true" />
@@ -1712,7 +1801,7 @@ export default function Home() {
                   <Target size={20} aria-hidden="true" />
                   <div>
                     <h2>Allocation Mix</h2>
-                    <p>How monthly power is divided across your current money system.</p>
+                    <p>How your verified monthly income is divided across your current money system.</p>
                   </div>
                 </div>
                 <div className={styles.donutWrap}>
@@ -1743,25 +1832,25 @@ export default function Home() {
                 <div className={styles.panelTitle}>
                   <PiggyBank size={20} aria-hidden="true" />
                   <div>
-                    <h2>Cashflow Shape</h2>
-                    <p>Stash, protected capital, released monthly power, and bills pressure.</p>
+                    <h2>Income Shape</h2>
+                    <p>Verified income, planned allocations, and current bills pressure.</p>
                   </div>
                 </div>
                 <div className={styles.cashflowBars}>
                   <div>
-                    <span>Protected</span>
-                    <strong>{currency.format(protectedCash)}</strong>
-                    <i style={{ width: `${Math.min((protectedCash / Math.max(state.stash, 1)) * 100, 100)}%` }} />
+                    <span>Verified income</span>
+                    <strong>{currency.format(monthlyIncome)}</strong>
+                    <i style={{ width: "100%" }} />
                   </div>
                   <div>
-                    <span>Monthly power</span>
-                    <strong>{currency.format(buyingPower)}</strong>
-                    <i style={{ width: `${Math.min(state.buyingPowerPercent, 100)}%` }} />
+                    <span>Allocations mapped</span>
+                    <strong>{currency.format(monthlyIncome * Math.min(categoryTotal / 100, 1))}</strong>
+                    <i style={{ width: `${Math.min(categoryTotal, 100)}%` }} />
                   </div>
                   <div>
                     <span>Obligations used</span>
                     <strong>{currency.format(monthlyDue)}</strong>
-                    <i style={{ width: `${Math.min((monthlyDue / Math.max(buyingPower, 1)) * 100, 100)}%` }} />
+                    <i style={{ width: `${Math.min((monthlyDue / Math.max(monthlyIncome, 1)) * 100, 100)}%` }} />
                   </div>
                 </div>
               </article>
@@ -1835,6 +1924,112 @@ export default function Home() {
           </section>
         )}
 
+        {activeTab === "readiness" && (
+          <section className={styles.readinessWorkspace}>
+            <section className={styles.emergencyPanel}>
+              <div className={styles.panelTitle}>
+                <ShieldCheck size={22} aria-hidden="true" />
+                <div>
+                  <h2>Emergency Fund</h2>
+                  <p>See exactly how many months of essential expenses you can cover.</p>
+                </div>
+              </div>
+              <div className={styles.emergencyStatus}>
+                <div className={styles.emergencyGauge} style={{ "--progress": `${emergencyProgress}%` } as CSSProperties}>
+                  <strong>{Math.round(emergencyProgress)}%</strong>
+                  <span>funded</span>
+                </div>
+                <div>
+                  <span className={styles.statusPill}>
+                    {state.emergencyFund.balance > 0 ? <CheckCircle2 size={15} aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
+                    {state.emergencyFund.balance > 0 ? "Emergency fund started" : "No emergency fund yet"}
+                  </span>
+                  <h3>{emergencyMonthsCovered.toFixed(1)} months covered</h3>
+                  <p>{currency.format(state.emergencyFund.balance)} of {currency.format(emergencyTarget)} target</p>
+                  <div className={styles.progressTrack}><i style={{ width: `${emergencyProgress}%` }} /></div>
+                </div>
+              </div>
+              <div className={styles.emergencyInputs}>
+                <label>
+                  <span>Current emergency balance</span>
+                  <input type="number" min="0" value={state.emergencyFund.balance} onChange={(event) => setState((current) => ({ ...current, emergencyFund: { ...current.emergencyFund, balance: Math.max(0, Number(event.target.value)) } }))} />
+                </label>
+                <label>
+                  <span>Monthly essential expenses</span>
+                  <input type="number" min="1" value={state.emergencyFund.monthlyEssentials} onChange={(event) => setState((current) => ({ ...current, emergencyFund: { ...current.emergencyFund, monthlyEssentials: Math.max(1, Number(event.target.value)) } }))} />
+                </label>
+                <label>
+                  <span>Target months</span>
+                  <input type="number" min="1" max="24" value={state.emergencyFund.targetMonths} onChange={(event) => setState((current) => ({ ...current, emergencyFund: { ...current.emergencyFund, targetMonths: Math.max(1, Math.min(24, Number(event.target.value))) } }))} />
+                </label>
+              </div>
+            </section>
+
+            <section className={styles.moveOutPanel}>
+              <div className={styles.moveOutHeader}>
+                <div className={styles.panelTitle}>
+                  <House size={22} aria-hidden="true" />
+                  <div>
+                    <h2>Move-out Checklist</h2>
+                    <p>Edit the essentials, attach products, and mark each item ready.</p>
+                  </div>
+                </div>
+                <div className={styles.moveOutSummary}>
+                  <strong>{completedMoveOutItems}/{state.moveOutItems.length}</strong>
+                  <span>ready · {currency.format(moveOutReadyTotal)} of {currency.format(moveOutTotal)}</span>
+                </div>
+              </div>
+
+              <div className={styles.moveOutForm}>
+                <input placeholder="Item or requirement" value={moveOutDraft.name} onChange={(event) => setMoveOutDraft((current) => ({ ...current, name: event.target.value }))} />
+                <input type="number" min="0" placeholder="Estimated cost" value={moveOutDraft.estimatedCost} onChange={(event) => setMoveOutDraft((current) => ({ ...current, estimatedCost: event.target.value }))} />
+                <input type="url" placeholder="Product link (optional)" value={moveOutDraft.productUrl} onChange={(event) => setMoveOutDraft((current) => ({ ...current, productUrl: event.target.value }))} />
+                <input placeholder="Image URL (optional)" value={moveOutDraft.imageUrl} onChange={(event) => setMoveOutDraft((current) => ({ ...current, imageUrl: event.target.value }))} />
+                <label className={styles.imageUploadButton}>
+                  <ImagePlus size={17} aria-hidden="true" />
+                  Upload image
+                  <input type="file" accept="image/*" onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) readImageFile(file, (imageUrl) => setMoveOutDraft((current) => ({ ...current, imageUrl })));
+                  }} />
+                </label>
+                <button type="button" className={styles.primaryButton} disabled={!moveOutDraft.name.trim()} onClick={addMoveOutItem}>
+                  <Plus size={17} aria-hidden="true" /> Add item
+                </button>
+              </div>
+
+              <div className={styles.moveOutList}>
+                {state.moveOutItems.map((item) => {
+                  const productUrl = safeExternalUrl(item.productUrl);
+                  return (
+                    <article className={[styles.moveOutItem, item.completed ? styles.moveOutItemDone : ""].join(" ")} key={item.id}>
+                      <button className={styles.checkButton} type="button" aria-label={item.completed ? `Mark ${item.name} incomplete` : `Mark ${item.name} complete`} onClick={() => updateMoveOutItem(item.id, { completed: !item.completed })}>
+                        {item.completed ? <CheckCircle2 size={24} aria-hidden="true" /> : <span />}
+                      </button>
+                      <div className={styles.moveOutImage} style={item.imageUrl ? { backgroundImage: `url(${JSON.stringify(item.imageUrl)})` } : undefined}>
+                        {!item.imageUrl ? <House size={22} aria-hidden="true" /> : null}
+                      </div>
+                      <div className={styles.moveOutFields}>
+                        <input aria-label="Item name" value={item.name} onChange={(event) => updateMoveOutItem(item.id, { name: event.target.value })} />
+                        <div>
+                          <input aria-label="Estimated cost" type="number" min="0" value={item.estimatedCost} onChange={(event) => updateMoveOutItem(item.id, { estimatedCost: Math.max(0, Number(event.target.value)) })} />
+                          <input aria-label="Product link" type="url" placeholder="Product link" value={item.productUrl ?? ""} onChange={(event) => updateMoveOutItem(item.id, { productUrl: event.target.value })} />
+                          <input aria-label="Image URL" placeholder="Image URL" value={item.imageUrl?.startsWith("data:") ? "Uploaded image" : item.imageUrl ?? ""} disabled={item.imageUrl?.startsWith("data:")} onChange={(event) => updateMoveOutItem(item.id, { imageUrl: event.target.value })} />
+                        </div>
+                      </div>
+                      <div className={styles.moveOutActions}>
+                        {productUrl ? <a href={productUrl} target="_blank" rel="noreferrer" aria-label={`Open product for ${item.name}`}><ExternalLink size={17} aria-hidden="true" /></a> : null}
+                        <label aria-label={`Upload image for ${item.name}`}><ImagePlus size={17} aria-hidden="true" /><input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) readImageFile(file, (imageUrl) => updateMoveOutItem(item.id, { imageUrl })); }} /></label>
+                        <button type="button" aria-label={`Delete ${item.name}`} onClick={() => deleteMoveOutItem(item.id)}><Trash2 size={17} aria-hidden="true" /></button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          </section>
+        )}
+
         {activeTab === "budget" && (
           <section className={styles.workspace}>
             <nav className={styles.subTabs} aria-label="Budget sections">
@@ -1883,7 +2078,7 @@ export default function Home() {
 
                 <div className={styles.categoryList}>
                   {state.categories.map((category, index) => {
-                    const allocation = buyingPower * (category.percent / 100);
+                    const allocation = monthlyIncome * (category.percent / 100);
                     const subTotal = (category.subItems ?? []).reduce((sum, item) => sum + item.percent, 0);
                     const isExpanded = expandedCategoryId === category.id;
 
